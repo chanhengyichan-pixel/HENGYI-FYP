@@ -1,0 +1,13 @@
+# Experiment 06 — YOLOv9 on Roboflow
+# Dataset: Roboflow Construction Safety, 5 classes
+path: /home/heng/FYP/Dataset/Roboflow Dataset/construction safety.yolov8
+train: train/images
+val:   valid/images
+test:  test/images
+nc: 5
+names:
+  0: helmet
+  1: no-helmet
+  2: no-vest
+  3: person
+  4: vest

@@ -1,0 +1,38 @@
+======================================================================
+  EXPERIMENT 06 — YOLOv9s on Roboflow
+======================================================================
+
+  SETUP
+    Model            : YOLOv9s (yolov9s.pt)
+    Dataset          : Roboflow
+    Classes ( 5)      : ['helmet', 'no-helmet', 'no-vest', 'person', 'vest']
+    Epochs trained   : 68  (max=100, patience=20)
+    Training time    : 30.7 min
+    GPU              : NVIDIA GeForce RTX 4050 Laptop GPU
+
+  TEST SET METRICS
+    mAP@0.5          : 0.7843  (78.43%)
+    mAP@0.5:0.95     : 0.4203  (42.03%)
+    Precision        : 0.8467  (84.67%)
+    Recall           : 0.7299  (72.99%)
+    F1               : 0.7840
+
+  INFERENCE (single image, GPU, 640×640)
+    Avg latency      : 16.32 ms
+    FPS              : 61.3
+
+  PER-CLASS AP@0.5
+    helmet                  : 0.9134  (91.34%)
+    no-helmet               : 0.5238  (52.38%)
+    no-vest                 : 0.7300  (73.00%)
+    person                  : 0.9023  (90.23%)
+    vest                    : 0.8519  (85.19%)
+
+  TRAINING CONFIG
+    Batch / Img size : 8 / 640×640
+    Optimizer        : SGD  lr0=0.01  momentum=0.937
+    AMP              : True  |  Seed: 42
+
+  Weights  : /home/heng/FYP/results/exp06_yolov9_roboflow/weights/best.pt
+  Run dir  : /home/heng/FYP/results/exp06_yolov9_roboflow
+======================================================================

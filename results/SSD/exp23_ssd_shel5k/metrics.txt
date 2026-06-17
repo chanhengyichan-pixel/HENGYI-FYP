@@ -1,0 +1,39 @@
+======================================================================
+  EXPERIMENT 23 — SSD300 (VGG16) on SHEL5K
+======================================================================
+
+  SETUP
+    Model            : SSD300 (VGG16, PyTorch)
+    Dataset          : SHEL5K (Safety Helmet Wearing Dataset)
+    Classes ( 7)      : ['helmet', 'head_with_helmet', 'person_with_helmet', 'face',
+                        'head', 'person_no_helmet', 'person']
+    Epochs trained   : 100 (max=100, patience=20)
+    Training time    : ~95 min
+    GPU              : NVIDIA GeForce RTX 4050 Laptop GPU
+
+  TEST SET METRICS (750 images)
+    mAP@0.5          : 0.3399  (33.99%)
+    mAP@0.5:0.95     : 0.1366  (13.66%)
+    Precision        : 0.6670  (66.70%)
+    Recall           : 0.3377  (33.77%)
+    F1               : 0.4484
+
+  PER-CLASS AP@0.5
+    helmet                : 0.4084  (40.84%)
+    head_with_helmet      : 0.4446  (44.46%)
+    person_with_helmet    : 0.4839  (48.39%)
+    face                  : 0.1563  (15.63%)
+    head                  : 0.3781  (37.81%)
+    person_no_helmet      : 0.5083  (50.83%)
+    person                : 0.0000  (0.00%)
+
+  TRAINING CONFIG (IDENTICAL TO YOLO)
+    Batch / Img size : 8 / 640×640
+    Optimizer        : SGD  lr0=0.01  momentum=0.937
+    Weight decay     : 0.0005  |  Seed: 42
+    AMP              : True
+    LR scheduler     : Cosine annealing
+
+  Weights  : /home/heng/FYP/results/SSD/exp23_ssd_shel5k/weights/best.pth
+  Run dir  : /home/heng/FYP/results/SSD/exp23_ssd_shel5k
+======================================================================

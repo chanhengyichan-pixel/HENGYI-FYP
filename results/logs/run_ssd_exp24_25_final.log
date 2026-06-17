@@ -1,0 +1,88 @@
+/home/heng/FYP/train_ssd_all.py:695: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = GradScaler()
+======================================================================
+  SSD300 — All Experiments (YOLO Configuration)
+======================================================================
+  Running  : ['SH17', 'SFCHD']
+  Config   : Batch=4, ImgSz=480×480, LR=0.01, SGD(momentum=0.937)
+  GPU      : NVIDIA GeForce RTX 4050 Laptop GPU
+  VRAM     : 6.1 GB
+  GPU temp : 38°C
+
+
+──────────────────────────────────────────────────────────────────────
+  Resolving dataset: SH17 ...
+
+======================================================================
+  EXP 24 — SSD300 (VGG16) | SH17
+======================================================================
+  results   : /home/heng/FYP/results/SSD/exp24_ssd_sh17
+  classes   : 17 → ['person', 'ear', 'ear-mufs', 'face', 'face-guard', 'face-mask', 'foot', 'tool', 'glasses', 'gloves', 'helmet', 'hands', 'head', 'medical-suit', 'shoes', 'safety-suit', 'safety-vest']
+  GPU       : NVIDIA GeForce RTX 4050 Laptop GPU
+  GPU temp  : 38°C
+
+  Building datasets...
+  Train: 6479 | Val: 1296 | Test: 324
+  Starting training for 100 epochs...
+  Epoch 1/100 [Batch 324/1620]
+  Epoch 1/100 [Batch 648/1620]
+  Epoch 1/100 [Batch 972/1620]
+  Epoch 1/100 [Batch 1296/1620]
+  Epoch 1/100 [Batch 1620/1620]
+  Epoch 1/100 | Loss: 6.0062 [BEST]
+  Epoch 2/100 [Batch 324/1620]
+  Epoch 2/100 [Batch 648/1620]
+  Epoch 2/100 [Batch 972/1620]
+  Epoch 2/100 [Batch 1296/1620]
+  Epoch 2/100 [Batch 1620/1620]
+  Epoch 2/100 | Loss: 5.2720 [BEST]
+  Epoch 3/100 [Batch 324/1620]
+  Epoch 3/100 [Batch 648/1620]
+  Epoch 3/100 [Batch 972/1620]
+  Epoch 3/100 [Batch 1296/1620]
+  Epoch 3/100 [Batch 1620/1620]
+  Epoch 3/100 | Loss: 5.1278 [BEST]
+  Epoch 4/100 [Batch 324/1620]
+  Epoch 4/100 [Batch 648/1620]
+  Epoch 4/100 [Batch 972/1620]
+  Epoch 4/100 [Batch 1296/1620]
+  Epoch 4/100 [Batch 1620/1620]
+  Epoch 4/100 | Loss: 5.0784 [BEST]
+  Epoch 5/100 [Batch 324/1620]
+  Epoch 5/100 [Batch 648/1620]
+  Epoch 5/100 [Batch 972/1620]
+  Epoch 5/100 [Batch 1296/1620]
+  Epoch 5/100 [Batch 1620/1620]
+  Epoch 5/100 | Loss: 5.0727 [BEST]
+  Epoch 6/100 [Batch 324/1620]
+  Epoch 6/100 [Batch 648/1620]
+  Epoch 6/100 [Batch 972/1620]
+  Epoch 6/100 [Batch 1296/1620]
+  Epoch 6/100 [Batch 1620/1620]
+  Epoch 6/100 | Loss: 5.0874
+  Epoch 7/100 [Batch 324/1620]
+  Epoch 7/100 [Batch 648/1620]
+  Epoch 7/100 [Batch 972/1620]
+  Epoch 7/100 [Batch 1296/1620]
+  Epoch 7/100 [Batch 1620/1620]
+  Epoch 7/100 | Loss: 5.0888
+  Epoch 8/100 [Batch 324/1620]
+  Epoch 8/100 [Batch 648/1620]
+  Epoch 8/100 [Batch 972/1620]
+  Epoch 8/100 [Batch 1296/1620]
+  Epoch 8/100 [Batch 1620/1620]
+  Epoch 8/100 | Loss: 5.1213
+  Epoch 9/100 [Batch 324/1620]
+  Epoch 9/100 [Batch 648/1620]
+  Epoch 9/100 [Batch 972/1620]
+  Epoch 9/100 [Batch 1296/1620]
+  Epoch 9/100 [Batch 1620/1620]
+  Epoch 9/100 | Loss: 5.1319
+  Epoch 10/100 [Batch 324/1620]
+  Epoch 10/100 [Batch 648/1620]
+  Epoch 10/100 [Batch 972/1620]
+  Epoch 10/100 [Batch 1296/1620]
+  Epoch 10/100 [Batch 1620/1620]
+  Epoch 10/100 | Loss: 5.1311
+  Epoch 11/100 [Batch 324/1620]
+  Epoch 11/100 [Batch 648/1620]

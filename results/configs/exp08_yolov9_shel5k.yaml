@@ -1,0 +1,15 @@
+# Experiment 08 — YOLOv9 on SHEL5K
+# Dataset: SHEL5K-YOLO, 7 classes
+path: /home/heng/FYP/Dataset/SHEL5K-YOLO
+train: train/images
+val:   val/images
+test:  test/images
+nc: 7
+names:
+  0: helmet
+  1: head_with_helmet
+  2: person_with_helmet
+  3: face
+  4: head
+  5: person_no_helmet
+  6: person

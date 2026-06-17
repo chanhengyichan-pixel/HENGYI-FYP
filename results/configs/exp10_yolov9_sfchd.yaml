@@ -1,0 +1,15 @@
+# Experiment 10 — YOLOv9 on SFCHD
+# Dataset: SFCHD-YOLO, 7 classes
+path: /home/heng/FYP/Dataset/SFCHD-YOLO
+train: train/images
+val:   val/images
+test:  test/images
+nc: 7
+names:
+  0: person
+  1: helmet
+  2: self_clothes
+  3: safety_clothes
+  4: head
+  5: blur_head
+  6: blur_clothes

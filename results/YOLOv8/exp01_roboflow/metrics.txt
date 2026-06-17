@@ -1,0 +1,43 @@
+=================================================================
+  EXPERIMENT 01 — YOLOv8s on Roboflow Construction Safety
+=================================================================
+
+  SETUP
+    Model            : YOLOv8s (/home/heng/FYP/results/yolov8s.pt)
+    Dataset          : Roboflow Construction Safety
+    Train / Val / Test: 997 / 119 / 90 images
+    Classes          : ['helmet', 'no-helmet', 'no-vest', 'person', 'vest']
+    Epochs trained   : 100
+    Training time    : 11.1 min
+    GPU              : NVIDIA GeForce RTX 4050 Laptop GPU
+
+  TEST SET METRICS
+    mAP@0.5          : 0.8001  (80.01%)
+    mAP@0.5:0.95     : 0.4090  (40.90%)
+    Precision        : 0.7041  (70.41%)
+    Recall           : 0.8152  (81.52%)
+    F1 (approx)      : 0.7556
+
+  INFERENCE (single image, GPU, 640×640)
+    Avg latency      : 18.67 ms
+    FPS              : 53.6
+
+  PER-CLASS AP@0.5
+    helmet          : 0.9068  (90.68%)
+    no-helmet       : 0.6679  (66.79%)
+    no-vest         : 0.6864  (68.64%)
+    person          : 0.8884  (88.84%)
+    vest            : 0.8512  (85.12%)
+
+  TRAINING CONFIG
+    Epochs           : 100 (patience=20)
+    Batch size       : 8
+    Image size       : 640×640
+    Optimizer        : SGD  lr0=0.01  momentum=0.937
+    AMP              : True
+    Seed             : 42
+    Pre-trained      : ImageNet (/home/heng/FYP/results/yolov8s.pt)
+
+  Weights saved to   : /home/heng/FYP/results/exp01_yolov8_roboflow/weights/best.pt
+  Run dir            : /home/heng/FYP/results/exp01_yolov8_roboflow
+=================================================================

@@ -1,0 +1,16 @@
+# Experiment 01 — YOLOv8 on Roboflow Construction Safety
+# Dataset: 997 train / 119 val / 90 test, 5 classes
+# Absolute paths so the config works from any working directory.
+
+path: /home/heng/FYP/Dataset/Roboflow Dataset/construction safety.yolov8
+train: train/images
+val:   valid/images
+test:  test/images
+
+nc: 5
+names:
+  0: helmet
+  1: no-helmet
+  2: no-vest
+  3: person
+  4: vest

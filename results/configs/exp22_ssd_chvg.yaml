@@ -1,0 +1,16 @@
+# Experiment 22 — SSD300 on CHVG
+# Dataset: CHVG-YOLO, 8 classes
+path: /home/heng/FYP/Dataset/CHVG-YOLO
+train: train/images
+val:   val/images
+test:  test/images
+nc: 8
+names:
+  0: person
+  1: vest
+  2: white
+  3: yellow
+  4: head
+  5: blue
+  6: glass
+  7: red

@@ -1,0 +1,50 @@
+======================================================================
+  EXPERIMENT 04 — YOLOv8s on SH17
+======================================================================
+
+  SETUP
+    Model            : YOLOv8s (yolov8s.pt)
+    Dataset          : SH17
+    Classes (17)      : ['person', 'ear', 'ear-mufs', 'face', 'face-guard', 'face-mask', 'foot', 'tool', 'glasses', 'gloves', 'helmet', 'hands', 'head', 'medical-suit', 'shoes', 'safety-suit', 'safety-vest']
+    Epochs trained   : 100  (max=100, patience=20)
+    Training time    : 544.3 min
+    GPU              : NVIDIA GeForce RTX 4050 Laptop GPU
+
+  TEST SET METRICS
+    mAP@0.5          : 0.6471  (64.71%)
+    mAP@0.5:0.95     : 0.4195  (41.95%)
+    Precision        : 0.7909  (79.09%)
+    Recall           : 0.5722  (57.22%)
+    F1               : 0.6640
+
+  INFERENCE (single image, GPU, 640×640)
+    Avg latency      : 130.70 ms
+    FPS              : 7.7
+
+  PER-CLASS AP@0.5
+    person                  : 0.8451  (84.51%)
+    ear                     : 0.7712  (77.12%)
+    ear-mufs                : 0.5988  (59.88%)
+    face                    : 0.8778  (87.78%)
+    face-guard              : 0.8093  (80.93%)
+    face-mask               : 0.7996  (79.96%)
+    foot                    : 0.0564  (5.64%)
+    tool                    : 0.2903  (29.03%)
+    glasses                 : 0.6829  (68.29%)
+    gloves                  : 0.4679  (46.79%)
+    helmet                  : 0.6627  (66.27%)
+    hands                   : 0.8218  (82.18%)
+    head                    : 0.8712  (87.12%)
+    medical-suit            : 0.9950  (99.50%)
+    shoes                   : 0.5903  (59.03%)
+    safety-suit             : 0.5114  (51.14%)
+    safety-vest             : 0.3498  (34.98%)
+
+  TRAINING CONFIG
+    Batch / Img size : 8 / 640×640
+    Optimizer        : SGD  lr0=0.01  momentum=0.937
+    AMP              : True  |  Seed: 42
+
+  Weights  : /home/heng/FYP/results/exp04_yolov8_sh17/weights/best.pt
+  Run dir  : /home/heng/FYP/results/exp04_yolov8_sh17
+======================================================================

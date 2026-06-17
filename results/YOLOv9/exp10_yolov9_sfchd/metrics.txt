@@ -1,0 +1,40 @@
+======================================================================
+  EXPERIMENT 10 — YOLOv9s on SFCHD
+======================================================================
+
+  SETUP
+    Model            : YOLOv9s (yolov9s.pt)
+    Dataset          : SFCHD
+    Classes ( 7)      : ['person', 'helmet', 'self_clothes', 'safety_clothes', 'head', 'blur_head', 'blur_clothes']
+    Epochs trained   : 99  (max=100, patience=20)
+    Training time    : 377.6 min
+    GPU              : NVIDIA GeForce RTX 4050 Laptop GPU
+
+  TEST SET METRICS
+    mAP@0.5          : 0.7852  (78.52%)
+    mAP@0.5:0.95     : 0.5090  (50.90%)
+    Precision        : 0.8300  (83.00%)
+    Recall           : 0.7434  (74.34%)
+    F1               : 0.7843
+
+  INFERENCE (single image, GPU, 640×640)
+    Avg latency      : 12.25 ms
+    FPS              : 81.6
+
+  PER-CLASS AP@0.5
+    person                  : 0.9744  (97.44%)
+    helmet                  : 0.9466  (94.66%)
+    self_clothes            : 0.8107  (81.07%)
+    safety_clothes          : 0.9561  (95.61%)
+    head                    : 0.8124  (81.24%)
+    blur_head               : 0.4438  (44.38%)
+    blur_clothes            : 0.5524  (55.24%)
+
+  TRAINING CONFIG
+    Batch / Img size : 8 / 640×640
+    Optimizer        : SGD  lr0=0.01  momentum=0.937
+    AMP              : True  |  Seed: 42
+
+  Weights  : /home/heng/FYP/results/YOLOv9/exp10_yolov9_sfchd/weights/best.pt
+  Run dir  : /home/heng/FYP/results/YOLOv9/exp10_yolov9_sfchd
+======================================================================

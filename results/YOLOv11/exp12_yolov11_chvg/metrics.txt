@@ -1,0 +1,41 @@
+======================================================================
+  EXPERIMENT 12 — YOLO11s on CHVG
+======================================================================
+
+  SETUP
+    Model            : YOLO11s (yolo11s.pt)
+    Dataset          : CHVG
+    Classes ( 8)      : ['person', 'vest', 'white', 'yellow', 'head', 'blue', 'glass', 'red']
+    Epochs trained   : 99  (max=100, patience=20)
+    Training time    : 36.3 min
+    GPU              : NVIDIA GeForce RTX 4050 Laptop GPU
+
+  TEST SET METRICS
+    mAP@0.5          : 0.9214  (92.14%)
+    mAP@0.5:0.95     : 0.5908  (59.08%)
+    Precision        : 0.8826  (88.26%)
+    Recall           : 0.8810  (88.10%)
+    F1               : 0.8818
+
+  INFERENCE (single image, GPU, 640×640)
+    Avg latency      : 7.73 ms
+    FPS              : 129.4
+
+  PER-CLASS AP@0.5
+    person                  : 0.9534  (95.34%)
+    vest                    : 0.9328  (93.28%)
+    white                   : 0.9468  (94.68%)
+    yellow                  : 0.9255  (92.55%)
+    head                    : 0.9445  (94.45%)
+    blue                    : 0.9234  (92.34%)
+    glass                   : 0.8504  (85.04%)
+    red                     : 0.8942  (89.42%)
+
+  TRAINING CONFIG
+    Batch / Img size : 8 / 640×640
+    Optimizer        : SGD  lr0=0.01  momentum=0.937
+    AMP              : True  |  Seed: 42
+
+  Weights  : /home/heng/FYP/results/YOLOv11/exp12_yolov11_chvg/weights/best.pt
+  Run dir  : /home/heng/FYP/results/YOLOv11/exp12_yolov11_chvg
+======================================================================

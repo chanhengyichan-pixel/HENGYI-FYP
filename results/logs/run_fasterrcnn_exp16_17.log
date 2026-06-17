@@ -1,0 +1,56 @@
+======================================================================
+  Faster R-CNN — All Experiments
+======================================================================
+  Running  : ['Roboflow']
+  GPU      : NVIDIA GeForce RTX 4050 Laptop GPU
+  VRAM     : 6.1 GB
+  GPU temp : 65°C
+
+
+──────────────────────────────────────────────────────────────────────
+  Resolving dataset: Roboflow ...
+
+======================================================================
+  EXP 16 — Faster R-CNN ResNet50-FPN | Roboflow
+======================================================================
+  results   : /home/heng/FYP/results/FasterRCNN/exp16_fasterrcnn_roboflow
+  classes   : 5 → ['helmet', 'no-helmet', 'no-vest', 'person', 'vest']
+  GPU       : NVIDIA GeForce RTX 4050 Laptop GPU
+  GPU temp  : 65°C
+
+  Building datasets...
+  Train: 997 | Val: 119 | Test: 90
+
+  Attempting training with batch_size=4...
+
+  FAILED — EXP 16 (Roboflow):
+Traceback (most recent call last):
+  File "/home/heng/FYP/train_fasterrcnn_all.py", line 886, in main
+    metrics = train_experiment(key, classes)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/heng/FYP/train_fasterrcnn_all.py", line 618, in train_experiment
+    model.to(DEVICE)
+  File "/home/heng/edge-ai-safety-monitor-second/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1384, in to
+    return self._apply(convert)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/heng/edge-ai-safety-monitor-second/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 934, in _apply
+    module._apply(fn)
+  File "/home/heng/edge-ai-safety-monitor-second/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 934, in _apply
+    module._apply(fn)
+  File "/home/heng/edge-ai-safety-monitor-second/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 934, in _apply
+    module._apply(fn)
+  File "/home/heng/edge-ai-safety-monitor-second/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 965, in _apply
+    param_applied = fn(param)
+                    ^^^^^^^^^
+  File "/home/heng/edge-ai-safety-monitor-second/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1370, in convert
+    return t.to(
+           ^^^^^
+torch.AcceleratorError: CUDA error: out of memory
+Search for `cudaErrorMemoryAllocation' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.
+
+
+
+  Experiments that failed: ['roboflow']

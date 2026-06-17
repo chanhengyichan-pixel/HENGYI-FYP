@@ -1,0 +1,40 @@
+======================================================================
+  EXPERIMENT 21 — SSD300 (VGG16) on Roboflow
+======================================================================
+
+  SETUP
+    Model            : SSD300 (VGG16, PyTorch)
+    Dataset          : Roboflow
+    Classes ( 5)      : ['helmet', 'no-helmet', 'no-vest', 'person', 'vest']
+    Epochs trained   : 100  (max=100, patience=20)
+    Training time    : 111.5 min
+    GPU              : NVIDIA GeForce RTX 4050 Laptop GPU
+
+  TEST SET METRICS
+    mAP@0.5          : 0.5066  (50.66%)
+    mAP@0.5:0.95     : 0.2136  (21.36%)
+    Precision        : 0.6518  (65.18%)
+    Recall           : 0.5859  (58.59%)
+    F1               : 0.6171
+
+  INFERENCE (single image, GPU, 640×640)
+    Avg latency      : 19.53 ms
+    FPS              : 51.2
+
+  PER-CLASS AP@0.5
+    helmet                  : 0.6354  (63.54%)
+    no-helmet               : 0.2210  (22.10%)
+    no-vest                 : 0.4297  (42.97%)
+    person                  : 0.6544  (65.44%)
+    vest                    : 0.5926  (59.26%)
+
+  TRAINING CONFIG (IDENTICAL TO YOLO)
+    Batch / Img size : 8 / 640×640
+    Optimizer        : SGD  lr0=0.01  momentum=0.937
+    Weight decay     : 0.0005  |  Seed: 42
+    AMP              : True
+    LR scheduler     : Cosine annealing
+
+  Weights  : /home/heng/FYP/results/SSD/exp21_ssd_roboflow/weights/best.pth
+  Run dir  : /home/heng/FYP/results/SSD/exp21_ssd_roboflow
+======================================================================

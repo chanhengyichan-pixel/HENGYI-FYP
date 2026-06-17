@@ -1,0 +1,401 @@
+Collecting pycocotools
+  Downloading pycocotools-2.0.11-cp312-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (1.3 kB)
+Requirement already satisfied: numpy in /home/heng/edge-ai-safety-monitor-second/.venv/lib/python3.12/site-packages (from pycocotools) (2.4.3)
+Downloading pycocotools-2.0.11-cp312-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (411 kB)
+Installing collected packages: pycocotools
+Successfully installed pycocotools-2.0.11
+
+[notice] A new release of pip is available: 26.1 -> 26.1.2
+[notice] To update, run: pip install --upgrade pip
+Installing pycocotools...
+======================================================================
+  Faster R-CNN — All Experiments
+======================================================================
+  Running  : ['Roboflow']
+  GPU      : NVIDIA GeForce RTX 4050 Laptop GPU
+  VRAM     : 6.1 GB
+  GPU temp : 39°C
+
+
+──────────────────────────────────────────────────────────────────────
+  Resolving dataset: Roboflow ...
+
+======================================================================
+  EXP 16 — Faster R-CNN ResNet50-FPN | Roboflow
+======================================================================
+  results   : /home/heng/FYP/results/FasterRCNN/exp16_fasterrcnn_roboflow
+  classes   : 5 → ['helmet', 'no-helmet', 'no-vest', 'person', 'vest']
+  GPU       : NVIDIA GeForce RTX 4050 Laptop GPU
+  GPU temp  : 39°C
+
+  Building datasets...
+  Train: 997 | Val: 0 | Test: 90
+
+  Attempting training with batch_size=4...
+Downloading: "https://download.pytorch.org/models/fasterrcnn_resnet50_fpn_coco-258fb6c6.pth" to /home/heng/.cache/torch/hub/checkpoints/fasterrcnn_resnet50_fpn_coco-258fb6c6.pth
+  0%|          | 0.00/160M [00:00<?, ?B/s]  0%|          | 512k/160M [00:00<00:32, 5.09MB/s]  2%|▏         | 3.38M/160M [00:00<00:08, 19.4MB/s]  4%|▍         | 6.75M/160M [00:00<00:06, 25.8MB/s]  6%|▌         | 9.88M/160M [00:00<00:05, 28.3MB/s]  8%|▊         | 13.1M/160M [00:00<00:05, 29.8MB/s] 10%|█         | 16.2M/160M [00:00<00:04, 30.7MB/s] 12%|█▏        | 19.2M/160M [00:00<00:04, 30.5MB/s] 14%|█▍        | 22.5M/160M [00:00<00:04, 31.3MB/s] 16%|█▌        | 25.8M/160M [00:00<00:04, 31.8MB/s] 18%|█▊        | 28.9M/160M [00:01<00:04, 31.5MB/s] 20%|██        | 32.0M/160M [00:01<00:04, 30.0MB/s] 22%|██▏       | 35.0M/160M [00:01<00:05, 23.3MB/s] 24%|██▎       | 37.8M/160M [00:01<00:05, 24.6MB/s] 25%|██▌       | 40.4M/160M [00:01<00:04, 25.1MB/s] 27%|██▋       | 43.6M/160M [00:01<00:04, 27.1MB/s] 29%|██▉       | 46.4M/160M [00:01<00:04, 26.8MB/s] 31%|███       | 49.1M/160M [00:01<00:04, 27.2MB/s] 32%|███▏      | 51.9M/160M [00:01<00:04, 26.8MB/s] 34%|███▍      | 54.6M/160M [00:02<00:04, 26.6MB/s] 36%|███▌      | 57.5M/160M [00:02<00:03, 27.3MB/s] 38%|███▊      | 60.8M/160M [00:02<00:03, 28.3MB/s] 40%|███▉      | 63.6M/160M [00:02<00:03, 28.7MB/s] 42%|████▏     | 66.6M/160M [00:02<00:03, 28.5MB/s] 43%|████▎     | 69.4M/160M [00:02<00:03, 25.9MB/s] 45%|████▌     | 72.0M/160M [00:02<00:03, 26.3MB/s] 47%|████▋     | 75.1M/160M [00:02<00:03, 27.9MB/s] 49%|████▉     | 77.9M/160M [00:02<00:03, 28.0MB/s] 51%|█████     | 80.9M/160M [00:03<00:02, 28.7MB/s] 52%|█████▏    | 83.8M/160M [00:03<00:02, 28.4MB/s] 54%|█████▍    | 86.5M/160M [00:03<00:02, 27.9MB/s] 56%|█████▌    | 89.6M/160M [00:03<00:02, 29.2MB/s] 58%|█████▊    | 92.5M/160M [00:03<00:02, 28.9MB/s] 60%|█████▉    | 95.4M/160M [00:03<00:02, 28.8MB/s] 62%|██████▏   | 98.2M/160M [00:03<00:02, 27.3MB/s] 63%|██████▎   | 101M/160M [00:03<00:02, 28.7MB/s]  65%|██████▌   | 104M/160M [00:03<00:02, 28.8MB/s] 67%|██████▋   | 107M/160M [00:04<00:01, 28.9MB/s] 69%|██████▉   | 110M/160M [00:04<00:01, 29.5MB/s] 71%|███████   | 113M/160M [00:04<00:01, 30.1MB/s] 73%|███████▎  | 116M/160M [00:04<00:01, 29.6MB/s] 75%|███████▍  | 119M/160M [00:04<00:01, 29.3MB/s] 76%|███████▋  | 122M/160M [00:04<00:01, 28.1MB/s] 78%|███████▊  | 125M/160M [00:04<00:01, 26.8MB/s] 80%|███████▉  | 128M/160M [00:04<00:01, 27.2MB/s] 82%|████████▏ | 131M/160M [00:04<00:01, 28.8MB/s] 84%|████████▍ | 134M/160M [00:05<00:00, 28.7MB/s] 86%|████████▌ | 137M/160M [00:05<00:00, 28.9MB/s] 88%|████████▊ | 140M/160M [00:05<00:00, 29.1MB/s] 90%|████████▉ | 143M/160M [00:05<00:00, 29.3MB/s] 91%|█████████▏| 146M/160M [00:05<00:00, 29.2MB/s] 93%|█████████▎| 149M/160M [00:05<00:00, 28.9MB/s] 95%|█████████▌| 152M/160M [00:05<00:00, 29.9MB/s] 97%|█████████▋| 155M/160M [00:05<00:00, 29.2MB/s] 99%|█████████▉| 158M/160M [00:05<00:00, 29.8MB/s]100%|██████████| 160M/160M [00:05<00:00, 28.2MB/s]
+/home/heng/FYP/train_fasterrcnn_all.py:575: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = GradScaler()
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  [OOM] Reducing batch size from 4 to 2
+
+  Attempting training with batch_size=2...
+  Epoch 1/100 | Loss: 0.6314 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 2/100 | Loss: 0.5322 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 3/100 | Loss: 0.5101 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 4/100 | Loss: 0.5127
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 5/100 | Loss: 0.5025 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 6/100 | Loss: 0.4812 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 7/100 | Loss: 0.4871
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 8/100 | Loss: 0.4719 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 9/100 | Loss: 0.4706 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 10/100 | Loss: 0.4794
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 11/100 | Loss: 0.4657 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 12/100 | Loss: 0.4551 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 13/100 | Loss: 0.4580
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 14/100 | Loss: 0.4516 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 15/100 | Loss: 0.4444 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 16/100 | Loss: 0.4352 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 17/100 | Loss: 0.4362
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 18/100 | Loss: 0.4373
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 19/100 | Loss: 0.4222 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 20/100 | Loss: 0.4203 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 21/100 | Loss: 0.4146 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 22/100 | Loss: 0.4033 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 23/100 | Loss: 0.4085
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 24/100 | Loss: 0.3995 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 25/100 | Loss: 0.4064
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 26/100 | Loss: 0.3883 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 27/100 | Loss: 0.3963
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 28/100 | Loss: 0.3933
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 29/100 | Loss: 0.3946
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 30/100 | Loss: 0.3876 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 31/100 | Loss: 0.3425 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 32/100 | Loss: 0.3298 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 33/100 | Loss: 0.3429
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 34/100 | Loss: 0.3285 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 35/100 | Loss: 0.3183 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 36/100 | Loss: 0.3240
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 37/100 | Loss: 0.3242
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 38/100 | Loss: 0.3158 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 39/100 | Loss: 0.3038 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 40/100 | Loss: 0.3156
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 41/100 | Loss: 0.3125
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 42/100 | Loss: 0.3095
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 43/100 | Loss: 0.3021 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 44/100 | Loss: 0.3089
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 45/100 | Loss: 0.3184
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 46/100 | Loss: 0.2955 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 47/100 | Loss: 0.3011
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 48/100 | Loss: 0.3034
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 49/100 | Loss: 0.2900 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 50/100 | Loss: 0.2876 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 51/100 | Loss: 0.3050
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 52/100 | Loss: 0.3001
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 53/100 | Loss: 0.2924
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 54/100 | Loss: 0.3021
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 55/100 | Loss: 0.2863 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 56/100 | Loss: 0.2934
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 57/100 | Loss: 0.2981
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 58/100 | Loss: 0.2900
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 59/100 | Loss: 0.2954
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 60/100 | Loss: 0.2705 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 61/100 | Loss: 0.2803
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 62/100 | Loss: 0.2740
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 63/100 | Loss: 0.2759
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 64/100 | Loss: 0.2712
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 65/100 | Loss: 0.2710
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 66/100 | Loss: 0.2811
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 67/100 | Loss: 0.2919
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 68/100 | Loss: 0.2842
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 69/100 | Loss: 0.2642 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 70/100 | Loss: 0.2696
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 71/100 | Loss: 0.2772
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 72/100 | Loss: 0.2742
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 73/100 | Loss: 0.2695
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 74/100 | Loss: 0.2629 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 75/100 | Loss: 0.2645
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 76/100 | Loss: 0.2718
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 77/100 | Loss: 0.2734
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 78/100 | Loss: 0.2674
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 79/100 | Loss: 0.2803
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 80/100 | Loss: 0.2782
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 81/100 | Loss: 0.2684
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 82/100 | Loss: 0.2678
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 83/100 | Loss: 0.2700
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 84/100 | Loss: 0.2793
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 85/100 | Loss: 0.2660
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 86/100 | Loss: 0.2678
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 87/100 | Loss: 0.2675
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 88/100 | Loss: 0.2713
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 89/100 | Loss: 0.2696
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 90/100 | Loss: 0.2801
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 91/100 | Loss: 0.2807
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 92/100 | Loss: 0.2593 [BEST]
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 93/100 | Loss: 0.2744
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 94/100 | Loss: 0.2673
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 95/100 | Loss: 0.2726
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 96/100 | Loss: 0.2652
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 97/100 | Loss: 0.2633
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 98/100 | Loss: 0.2791
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 99/100 | Loss: 0.2794
+/home/heng/FYP/train_fasterrcnn_all.py:591: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with autocast():
+  Epoch 100/100 | Loss: 0.2644
+
+  Training complete: 319.0 min  (100 epochs)
+
+  Evaluating on test split ...
+  [WARN] COCO evaluation failed: Object of type float32 is not JSON serializable
+
+  Measuring inference speed ...
+
+======================================================================
+  EXPERIMENT 16 — Faster R-CNN ResNet50-FPN on Roboflow
+======================================================================
+
+  SETUP
+    Model            : Faster R-CNN ResNet50-FPN (PyTorch)
+    Dataset          : Roboflow
+    Classes ( 5)      : ['helmet', 'no-helmet', 'no-vest', 'person', 'vest']
+    Epochs trained   : 100  (max=100, patience=20)
+    Training time    : 319.0 min
+    Batch size       : 2
+    GPU              : NVIDIA GeForce RTX 4050 Laptop GPU
+
+  TEST SET METRICS
+    mAP@0.5          : 0.0000  (0.00%)
+    mAP@0.5:0.95     : 0.0000  (0.00%)
+    Precision        : 0.0000  (0.00%)
+    Recall           : 0.0000  (0.00%)
+    F1               : 0.0000
+
+  INFERENCE (single image, GPU, 640×640)
+    Avg latency      : 94.13 ms
+    FPS              : 10.6
+
+  PER-CLASS AP@0.5
+    helmet                  : 0.0000  (0.00%)
+    no-helmet               : 0.0000  (0.00%)
+    no-vest                 : 0.0000  (0.00%)
+    person                  : 0.0000  (0.00%)
+    vest                    : 0.0000  (0.00%)
+
+  TRAINING CONFIG
+    Batch / Img size : 2 / 640×640
+    Optimizer        : SGD  lr0=0.005  momentum=0.9
+    Weight decay     : 0.0005  |  Seed: 42
+    AMP              : True
+
+  Weights  : /home/heng/FYP/results/FasterRCNN/exp16_fasterrcnn_roboflow/weights/best.pth
+  Run dir  : /home/heng/FYP/results/FasterRCNN/exp16_fasterrcnn_roboflow
+======================================================================
+
+  Saved → /home/heng/FYP/results/FasterRCNN/exp16_fasterrcnn_roboflow/metrics.txt
+
+====================================================================================================
+  Faster R-CNN EXPERIMENT SUMMARY
+====================================================================================================
+  Dataset       Epochs    mAP@0.5   Precision   Recall      F1     FPS   Latency(ms)
+  ------------------------------------------------------------------------------------------------
+  Roboflow         100      0.00%       0.00%    0.00%  0.0000    10.6        94.13
+====================================================================================================
+
+  Summary saved → /home/heng/FYP/results/summary/fasterrcnn_experiments_summary.txt

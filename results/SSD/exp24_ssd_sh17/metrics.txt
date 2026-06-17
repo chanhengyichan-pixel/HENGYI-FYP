@@ -1,0 +1,52 @@
+======================================================================
+  EXPERIMENT 24 — SSD300 (VGG16) on SH17
+======================================================================
+
+  SETUP
+    Model            : SSD300 (VGG16, PyTorch)
+    Dataset          : SH17
+    Classes (17)      : ['person', 'ear', 'ear-mufs', 'face', 'face-guard', 'face-mask', 'foot', 'tool', 'glasses', 'gloves', 'helmet', 'hands', 'head', 'medical-suit', 'shoes', 'safety-suit', 'safety-vest']
+    Epochs trained   : 5  (max=5, patience=20)
+    Training time    : 339.5 min
+    GPU              : NVIDIA GeForce RTX 4050 Laptop GPU
+
+  TEST SET METRICS
+    mAP@0.5          : 0.1088  (10.88%)
+    mAP@0.5:0.95     : 0.0524  (5.24%)
+    Precision        : 0.6290  (62.90%)
+    Recall           : 0.2696  (26.96%)
+    F1               : 0.3774
+
+  INFERENCE (single image, GPU, 640×640)
+    Avg latency      : 23.07 ms
+    FPS              : 43.3
+
+  PER-CLASS AP@0.5
+    person                  : 0.5720  (57.20%)
+    ear                     : 0.0368  (3.68%)
+    ear-mufs                : 0.0000  (0.00%)
+    face                    : 0.4144  (41.44%)
+    face-guard              : 0.0000  (0.00%)
+    face-mask               : 0.0000  (0.00%)
+    foot                    : 0.0000  (0.00%)
+    tool                    : 0.0018  (0.18%)
+    glasses                 : 0.0122  (1.22%)
+    gloves                  : 0.0229  (2.29%)
+    helmet                  : 0.0099  (0.99%)
+    hands                   : 0.2656  (26.56%)
+    head                    : 0.5039  (50.39%)
+    medical-suit            : 0.0000  (0.00%)
+    shoes                   : 0.0109  (1.09%)
+    safety-suit             : 0.0000  (0.00%)
+    safety-vest             : 0.0000  (0.00%)
+
+  TRAINING CONFIG (IDENTICAL TO YOLO)
+    Batch / Img size : 1 / 288×288
+    Optimizer        : SGD  lr0=0.01  momentum=0.937
+    Weight decay     : 0.0005  |  Seed: 42
+    AMP              : True
+    LR scheduler     : Cosine annealing
+
+  Weights  : /home/heng/FYP/results/SSD/exp24_ssd_sh17/weights/best.pth
+  Run dir  : /home/heng/FYP/results/SSD/exp24_ssd_sh17
+======================================================================

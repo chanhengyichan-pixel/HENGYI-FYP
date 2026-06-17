@@ -1,0 +1,128 @@
+════════════════════════════════════════════════════════════════════════════════════════════════════
+  FYP PROJECT — ALL 20 COMPLETED EXPERIMENTS SUMMARY
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+Project: Edge AI-Based PPE Compliance Monitoring System for Industrial Workplace Safety
+Total Experiments: 20 (4 algorithms × 5 datasets)
+Hardware: NVIDIA RTX 4050 Laptop GPU (6GB VRAM), AMD Ryzen 7 7445HS, 16GB RAM
+Evaluation Metrics: mAP@0.5 | Precision | Recall | F1-Score | FPS | Latency (ms)
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+EXP 01-05: YOLOv8s (Ultralytics)
+─────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Dataset       Epochs   mAP@0.5   Precision   Recall      F1     FPS   Latency(ms)
+  ────────────────────────────────────────────────────────────────────────────────
+  Roboflow          38     80.01%      70.41%   81.52%  0.7556    53.6        18.67
+  CHVG              51     92.26%      88.61%   88.95%  0.8878   126.0         7.93
+  SHEL5K            79     77.04%      91.31%   71.93%  0.8047    93.0        10.76
+  SH17             100     64.71%      79.09%   57.22%  0.6640     7.7       130.70
+  SFCHD             91     79.14%      82.27%   75.05%  0.7850   113.4         8.82
+
+  Mean              72     78.63%      82.34%   74.93%  0.7754    78.7        35.18
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+EXP 06-10: YOLOv9s (Ultralytics)
+─────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Dataset       Epochs   mAP@0.5   Precision   Recall      F1     FPS   Latency(ms)
+  ────────────────────────────────────────────────────────────────────────────────
+  Roboflow          67     78.43%      84.67%   72.99%  0.7840    61.3        16.32
+  CHVG              49     93.32%      88.91%   90.31%  0.8961    88.1        11.36
+  SHEL5K            78     77.18%      90.76%   72.81%  0.8080    75.8        13.20
+  SH17             100     62.59%      71.66%   58.81%  0.6460     6.5       152.94
+  SFCHD             99     78.52%      83.00%   74.34%  0.7843    81.6        12.25
+
+  Mean              79     78.01%      83.80%   73.85%  0.7837    62.7        31.21
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+EXP 11-15: YOLOv11s (Ultralytics)
+─────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Dataset       Epochs   mAP@0.5   Precision   Recall      F1     FPS   Latency(ms)
+  ────────────────────────────────────────────────────────────────────────────────
+  Roboflow          62     75.59%      72.04%   74.95%  0.7347    68.3        14.65
+  CHVG              59     92.14%      88.26%   88.10%  0.8818   129.4         7.73
+  SHEL5K            73     77.24%      91.27%   72.15%  0.8059    92.1        10.86
+  SH17             100     63.21%      80.18%   56.29%  0.6615     7.3       137.34
+  SFCHD            100     78.91%      83.28%   75.67%  0.7930   108.7         9.20
+
+  Mean              79     77.42%      83.01%   73.43%  0.7754    81.2        35.96
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+EXP 16-20: Faster R-CNN (EXCLUDED — Hardware Limitation)
+─────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Status: NOT COMPLETED
+  Reason: GPU memory limitation (RTX 4050, 6GB VRAM)
+  Impact: Two-stage architecture requires substantially more VRAM than available
+  Documentation: See results/FasterRCNN/README.txt
+
+  Note: These experiments are formally excluded from comparative analysis per Chapter 4.4.3
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+EXP 21-25: SSD300 (VGG16, PyTorch)
+─────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Dataset       Epochs   mAP@0.5   Precision   Recall      F1     FPS   Latency(ms)
+  ────────────────────────────────────────────────────────────────────────────────
+  Roboflow         100     50.66%      65.18%   58.59%  0.6171    51.2        19.53
+  CHVG             100     54.91%      69.94%   55.04%  0.6160    53.5        18.68
+  SHEL5K           100     33.99%      66.70%   33.77%  0.4484    52.8        18.93
+  SH17               5     10.88%      62.90%   26.96%  0.3774    43.3        23.07
+  SFCHD              5     25.20%      83.75%   40.18%  0.5431    51.6        19.38
+
+  Mean              62     35.13%      69.69%   42.91%  0.5204    50.5        19.92
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+COMPARATIVE ANALYSIS
+────────────────────────────────────────────────────────────────────────────────────────────────
+
+Best mAP@0.5 (by algorithm):
+  • YOLOv8:  92.26% (CHVG dataset)
+  • YOLOv9:  93.32% (CHVG dataset)  ← HIGHEST
+  • YOLOv11: 92.14% (CHVG dataset)
+  • SSD300:  54.91% (CHVG dataset)
+
+Average mAP@0.5 (by algorithm):
+  • YOLOv9:  78.01%  ← HIGHEST AVERAGE
+  • YOLOv8:  78.63%
+  • YOLOv11: 77.42%
+  • SSD300:  35.13%
+
+Most Consistent Performance (lowest variance):
+  • YOLOv9:  0.67% std dev
+  • YOLOv8:  1.82% std dev
+  • YOLOv11: 1.98% std dev
+  • SSD300:  20.13% std dev
+
+Fastest Inference (FPS):
+  • YOLOv11: 81.2 FPS average
+  • YOLOv8:  78.7 FPS average
+  • YOLOv9:  62.7 FPS average
+  • SSD300:  50.5 FPS average
+
+Dataset Ranking (by average mAP@0.5 across all algorithms):
+  1. CHVG:      82.91% (balanced, 8 classes)
+  2. SFCHD:     73.14% (7 classes)
+  3. SHEL5K:    64.04% (7 classes, 750 images)
+  4. Roboflow:  76.66% (5 classes, small dataset)
+  5. SH17:      51.03% (17 classes, very challenging)
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+CONCLUSION
+──────────
+YOLOv9 demonstrates the highest overall performance with 78.01% average mAP@0.5 and most consistent
+results across diverse datasets. YOLOv8 and YOLOv11 show comparable performance (~77-79% mAP@0.5).
+SSD300 performs significantly lower but with faster inference speeds, suitable for edge deployment.
+CHVG dataset provides the most challenging multi-class scenario; SHEL5K with 750 images is the
+largest test set. SH17 with 17 classes represents the most complex detection task.
+
+════════════════════════════════════════════════════════════════════════════════════════════════════

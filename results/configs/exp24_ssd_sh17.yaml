@@ -1,0 +1,25 @@
+# Experiment 24 — SSD300 on SH17
+# Dataset: SH17-YOLO, 17 classes
+path: /home/heng/FYP/Dataset/SH17-YOLO
+train: train/images
+val:   val/images
+test:  test/images
+nc: 17
+names:
+  0: person
+  1: ear
+  2: ear-mufs
+  3: face
+  4: face-guard
+  5: face-mask
+  6: foot
+  7: tool
+  8: glasses
+  9: gloves
+  10: helmet
+  11: hands
+  12: head
+  13: medical-suit
+  14: shoes
+  15: safety-suit
+  16: safety-vest

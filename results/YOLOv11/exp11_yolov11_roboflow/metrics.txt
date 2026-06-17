@@ -1,0 +1,38 @@
+======================================================================
+  EXPERIMENT 11 — YOLO11s on Roboflow
+======================================================================
+
+  SETUP
+    Model            : YOLO11s (yolo11s.pt)
+    Dataset          : Roboflow
+    Classes ( 5)      : ['helmet', 'no-helmet', 'no-vest', 'person', 'vest']
+    Epochs trained   : 44  (max=100, patience=20)
+    Training time    : 13.3 min
+    GPU              : NVIDIA GeForce RTX 4050 Laptop GPU
+
+  TEST SET METRICS
+    mAP@0.5          : 0.7559  (75.59%)
+    mAP@0.5:0.95     : 0.3982  (39.82%)
+    Precision        : 0.7204  (72.04%)
+    Recall           : 0.7495  (74.95%)
+    F1               : 0.7347
+
+  INFERENCE (single image, GPU, 640×640)
+    Avg latency      : 14.65 ms
+    FPS              : 68.3
+
+  PER-CLASS AP@0.5
+    helmet                  : 0.9096  (90.96%)
+    no-helmet               : 0.5529  (55.29%)
+    no-vest                 : 0.5902  (59.02%)
+    person                  : 0.8856  (88.56%)
+    vest                    : 0.8413  (84.13%)
+
+  TRAINING CONFIG
+    Batch / Img size : 8 / 640×640
+    Optimizer        : SGD  lr0=0.01  momentum=0.937
+    AMP              : True  |  Seed: 42
+
+  Weights  : /home/heng/FYP/results/YOLOv11/exp11_yolov11_roboflow/weights/best.pt
+  Run dir  : /home/heng/FYP/results/YOLOv11/exp11_yolov11_roboflow
+======================================================================

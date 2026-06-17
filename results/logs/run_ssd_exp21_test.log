@@ -1,0 +1,28 @@
+/home/heng/FYP/train_ssd_all.py:699: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = GradScaler()
+======================================================================
+  SSD300 — All Experiments (YOLO Configuration)
+======================================================================
+  Running  : ['Roboflow']
+  Config   : Batch=8, ImgSz=640×640, LR=0.01, SGD(momentum=0.937)
+  GPU      : NVIDIA GeForce RTX 4050 Laptop GPU
+  VRAM     : 6.1 GB
+  GPU temp : 41°C
+
+
+──────────────────────────────────────────────────────────────────────
+  Resolving dataset: Roboflow ...
+
+======================================================================
+  EXP 21 — SSD300 (VGG16) | Roboflow
+======================================================================
+  results   : /home/heng/FYP/results/SSD/exp21_ssd_roboflow
+  classes   : 5 → ['helmet', 'no-helmet', 'no-vest', 'person', 'vest']
+  GPU       : NVIDIA GeForce RTX 4050 Laptop GPU
+  GPU temp  : 41°C
+
+  Building datasets...
+  Train: 997 | Val: 119 | Test: 90
+  Starting training for 100 epochs...
+  Epoch 1/100 [Batch 25/125]
+  Epoch 1/100 [Batch 50/125]

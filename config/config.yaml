@@ -18,6 +18,11 @@ detector:
 alerts:
   screenshot_dir: "output/screenshots"
 
+# Placeholder WAV files — replace with real recorded reminders before deployment.
+voice:
+  granted_sound: "assets/audio/granted.wav"
+  denied_sound:  "assets/audio/denied.wav"
+
 # evaluating_frame_count should be odd — eliminates majority-vote ties.
 # Ties are also handled explicitly as DENIED (fail-safe), but an odd
 # count makes the outcome unambiguous without needing that fallback.

@@ -12,6 +12,7 @@ from core.session_controller import SessionController
 from core.pipeline import Pipeline
 from alerts.alert_manager import AlertManager
 from alerts.screenshot_handler import ScreenshotHandler
+from alerts.voice_handler import VoiceHandler
 from dashboard.app import create_app
 
 logging.basicConfig(
@@ -34,7 +35,7 @@ def main():
     detector = Detector(config)
     decision_engine = DecisionEngine()
     session_controller = SessionController(config)
-    alert_manager = AlertManager([ScreenshotHandler(config)])
+    alert_manager = AlertManager([ScreenshotHandler(config), VoiceHandler(config)])
     pipeline = Pipeline(config, shared_state, camera, detector,
                         decision_engine, session_controller, alert_manager)
 

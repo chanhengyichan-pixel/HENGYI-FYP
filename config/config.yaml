@@ -1,0 +1,8 @@
+# --- Camera Settings ---
+# source: webcam index (0 = default laptop webcam) or a video file path
+# width/height: capture resolution in pixels
+camera:
+  source: 0
+  width: 640
+  height: 480
+  max_failed_reads: 10

@@ -15,6 +15,9 @@ detector:
   weights: "models/exp01_roboflow/weights/best.pt"
   confidence_threshold: 0.5
 
+alerts:
+  screenshot_dir: "output/screenshots"
+
 # evaluating_frame_count should be odd — eliminates majority-vote ties.
 # Ties are also handled explicitly as DENIED (fail-safe), but an odd
 # count makes the outcome unambiguous without needing that fallback.

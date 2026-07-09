@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+
+# Model weights
+*.pt
+*.onnx
+
+# Output files (keep .gitkeep)
+output/logs/*
+output/screenshots/*
+!output/logs/.gitkeep
+!output/screenshots/.gitkeep
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store

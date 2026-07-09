@@ -10,3 +10,7 @@ camera:
 dashboard:
   host: "0.0.0.0"
   port: 5000
+
+detector:
+  weights: "models/exp01_roboflow/weights/best.pt"
+  confidence_threshold: 0.5

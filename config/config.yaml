@@ -6,3 +6,7 @@ camera:
   width: 640
   height: 480
   max_failed_reads: 10
+
+dashboard:
+  host: "0.0.0.0"
+  port: 5000

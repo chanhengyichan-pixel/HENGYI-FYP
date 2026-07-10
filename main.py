@@ -13,6 +13,8 @@ from core.pipeline import Pipeline
 from alerts.alert_manager import AlertManager
 from alerts.screenshot_handler import ScreenshotHandler
 from alerts.voice_handler import VoiceHandler
+from alerts.event_log_handler import EventLogHandler
+from storage.event_store import EventStore
 from dashboard.app import create_app
 
 logging.basicConfig(
@@ -30,12 +32,17 @@ def main():
     config = load_config()
 
     shared_state = SharedState()
+    event_store = EventStore(config)
 
     camera = CameraCapture(config, shared_state)
     detector = Detector(config)
     decision_engine = DecisionEngine()
     session_controller = SessionController(config)
-    alert_manager = AlertManager([ScreenshotHandler(config), VoiceHandler(config)])
+    alert_manager = AlertManager([
+        ScreenshotHandler(config),
+        VoiceHandler(config),
+        EventLogHandler(event_store),
+    ])
     pipeline = Pipeline(config, shared_state, camera, detector,
                         decision_engine, session_controller, alert_manager)
 
@@ -51,7 +58,7 @@ def main():
     # arrives.
     pipeline.start()
 
-    app = create_app(config, shared_state)
+    app = create_app(config, shared_state, event_store)
 
     dash = config["dashboard"]
     logger.info("Starting dashboard on http://%s:%d", dash["host"], dash["port"])
@@ -83,6 +90,7 @@ def main():
         # alive while it runs, not the other way around.
         pipeline.stop()
         camera.stop()
+        event_store.close()
         logger.info("Done.")
 
 

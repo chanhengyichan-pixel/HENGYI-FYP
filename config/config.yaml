@@ -18,6 +18,9 @@ detector:
 alerts:
   screenshot_dir: "output/screenshots"
 
+storage:
+  db_path: "output/events.db"
+
 # Placeholder WAV files — replace with real recorded reminders before deployment.
 voice:
   granted_sound: "assets/audio/granted.wav"

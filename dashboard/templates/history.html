@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PPE Monitor — History</title>
+  <style>
+    :root {
+      --bg:           #0f1419;
+      --bg-card:      #161d27;
+      --bg-header:    #111820;
+      --border:       #1e2d3d;
+      --cyan:         #00b4d8;
+      --cyan-dim:     #005f73;
+      --green:        #22c55e;
+      --green-bg:     #052010;
+      --green-border: #166534;
+      --red:          #ef4444;
+      --red-bg:       #1f0505;
+      --red-border:   #7f1d1d;
+      --amber:        #f59e0b;
+      --text:         #cbd5e1;
+      --text-dim:     #64748b;
+      --text-muted:   #334155;
+      --radius:       8px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, "Segoe UI", "Inter", sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+      padding: 0 0 40px;
+    }
+
+    /* ── Header ── */
+    #header {
+      height: 52px;
+      background: var(--bg-header);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    #header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #header-stripe {
+      width: 3px;
+      height: 24px;
+      background: var(--cyan);
+      border-radius: 2px;
+    }
+
+    #header-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    /* Nav link */
+    #nav-link {
+      font-size: 0.8rem;
+      color: var(--cyan);
+      text-decoration: none;
+      border: 1px solid var(--cyan-dim);
+      border-radius: 5px;
+      padding: 4px 12px;
+      letter-spacing: 0.04em;
+      transition: background 0.15s;
+    }
+    #nav-link:hover { background: #001a22; }
+
+    /* ── Page body ── */
+    #content {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 24px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ── Card base ── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .card-hdr {
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-header);
+    }
+
+    /* ── Stats summary row ── */
+    #stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+
+    .stat-lbl {
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+
+    .stat-val {
+      font-size: 2rem;
+      font-weight: 700;
+      font-family: "Courier New", monospace;
+      color: var(--text);
+      line-height: 1;
+    }
+
+    .stat-val.cyan   { color: var(--cyan); }
+    .stat-val.green  { color: var(--green); }
+    .stat-val.red    { color: var(--red); }
+
+    /* ── Compliance bar ── */
+    #compliance-card .card-body {
+      padding: 16px;
+    }
+
+    #bar-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      margin-bottom: 6px;
+      color: var(--text-dim);
+    }
+
+    #bar-labels .lbl-granted { color: var(--green); font-weight: 600; }
+    #bar-labels .lbl-denied  { color: var(--red);   font-weight: 600; }
+
+    #compliance-bar {
+      height: 10px;
+      border-radius: 5px;
+      background: var(--red-bg);
+      border: 1px solid var(--red-border);
+      overflow: hidden;
+    }
+
+    #compliance-bar-fill {
+      height: 100%;
+      background: var(--green);
+      border-radius: 5px 0 0 5px;
+      transition: width 0.4s ease;
+    }
+
+    /* ── Violation counts ── */
+    #violations-list {
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .viol-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .viol-name {
+      width: 120px;
+      font-size: 0.85rem;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+
+    .viol-bar-wrap {
+      flex: 1;
+      height: 8px;
+      background: var(--bg-header);
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .viol-bar-fill {
+      height: 100%;
+      background: var(--amber);
+      border-radius: 4px;
+      transition: width 0.4s ease;
+    }
+
+    .viol-count {
+      font-size: 0.82rem;
+      font-family: "Courier New", monospace;
+      color: var(--text-dim);
+      width: 36px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    .viol-empty {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-style: italic;
+      padding: 4px 0;
+    }
+
+    /* ── Event history table ── */
+    table { border-collapse: collapse; width: 100%; }
+
+    thead tr { background: var(--bg-header); }
+
+    th {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      padding: 8px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      font-size: 0.88rem;
+      padding: 9px 16px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-dim);
+      vertical-align: top;
+    }
+
+    td:nth-child(1) {
+      font-family: "Courier New", monospace;
+      font-size: 0.82rem;
+    }
+
+    tbody tr:last-child td { border-bottom: none; }
+
+    tbody tr.ev-granted td:nth-child(2) { color: var(--green); font-weight: 600; }
+    tbody tr.ev-denied  td:nth-child(2) { color: var(--red);   font-weight: 600; }
+
+    .no-events td { color: var(--text-muted); font-style: italic; }
+
+    /* ── Pagination ── */
+    #pagination {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-header);
+    }
+
+    #page-info {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      font-family: "Courier New", monospace;
+    }
+
+    .page-btn {
+      font-size: 0.8rem;
+      font-family: system-ui, sans-serif;
+      color: var(--cyan);
+      background: none;
+      border: 1px solid var(--cyan-dim);
+      border-radius: 5px;
+      padding: 4px 14px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .page-btn:hover:not(:disabled) { background: #001a22; }
+    .page-btn:disabled { color: var(--text-muted); border-color: var(--border); cursor: default; }
+  </style>
+</head>
+<body>
+
+  <div id="header">
+    <div id="header-left">
+      <div id="header-stripe"></div>
+      <div id="header-title">PPE Monitor — Violation History</div>
+    </div>
+    <a id="nav-link" href="/">&#8592; Live Monitor</a>
+  </div>
+
+  <div id="content">
+
+    <!-- Summary counts -->
+    <div id="stats-row">
+      <div class="stat-card">
+        <div class="stat-lbl">Total Events</div>
+        <div class="stat-val cyan" id="s-total">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-lbl">Granted</div>
+        <div class="stat-val green" id="s-granted">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-lbl">Denied</div>
+        <div class="stat-val red" id="s-denied">—</div>
+      </div>
+    </div>
+
+    <!-- Compliance bar -->
+    <div id="compliance-card" class="card">
+      <div class="card-hdr">Compliance Rate</div>
+      <div class="card-body">
+        <div id="bar-labels">
+          <span class="lbl-granted" id="bar-granted-pct">—</span>
+          <span class="lbl-denied"  id="bar-denied-pct">—</span>
+        </div>
+        <div id="compliance-bar">
+          <div id="compliance-bar-fill" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Violation breakdown -->
+    <div class="card">
+      <div class="card-hdr">Violation Frequency</div>
+      <div id="violations-list">
+        <span class="viol-empty">Loading...</span>
+      </div>
+    </div>
+
+    <!-- Full event history -->
+    <div class="card">
+      <div class="card-hdr">Full Event History</div>
+      <table>
+        <thead>
+          <tr><th>Timestamp</th><th>Decision</th><th>Violations</th></tr>
+        </thead>
+        <tbody id="events-tbody">
+          <tr class="no-events"><td colspan="3">Loading...</td></tr>
+        </tbody>
+      </table>
+      <div id="pagination">
+        <button class="page-btn" id="btn-prev" onclick="changePage(-1)" disabled>&#8592; Prev</button>
+        <span id="page-info">Page 1</span>
+        <button class="page-btn" id="btn-next" onclick="changePage(1)">Next &#8594;</button>
+      </div>
+    </div>
+
+  </div><!-- content -->
+
+  <script>
+    let currentPage = 1;
+
+    function loadStats() {
+      fetch("/api/stats")
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById("s-total").textContent   = data.total_events;
+          document.getElementById("s-granted").textContent = data.granted_count;
+          document.getElementById("s-denied").textContent  = data.denied_count;
+
+          // Compliance bar
+          const total = data.total_events;
+          const pct   = total > 0 ? Math.round(data.granted_count / total * 100) : 0;
+          document.getElementById("compliance-bar-fill").style.width = pct + "%";
+          document.getElementById("bar-granted-pct").textContent =
+            "GRANTED  " + pct + "%";
+          document.getElementById("bar-denied-pct").textContent =
+            (100 - pct) + "%  DENIED";
+
+          // Violation breakdown
+          const vList = document.getElementById("violations-list");
+          const vc    = data.violation_counts;
+          const keys  = Object.keys(vc);
+          if (keys.length === 0) {
+            vList.innerHTML = '<span class="viol-empty">No violations recorded.</span>';
+            return;
+          }
+          const maxCount = Math.max(...Object.values(vc));
+          vList.innerHTML = keys.map(k => {
+            const pct = maxCount > 0 ? Math.round(vc[k] / maxCount * 100) : 0;
+            return `<div class="viol-row">
+              <span class="viol-name">${k}</span>
+              <div class="viol-bar-wrap">
+                <div class="viol-bar-fill" style="width:${pct}%"></div>
+              </div>
+              <span class="viol-count">${vc[k]}</span>
+            </div>`;
+          }).join("");
+        });
+    }
+
+    function loadEvents(page) {
+      fetch("/api/events?page=" + page)
+        .then(r => r.json())
+        .then(data => {
+          const tbody = document.getElementById("events-tbody");
+          if (data.events.length === 0) {
+            tbody.innerHTML = '<tr class="no-events"><td colspan="3">No events yet.</td></tr>';
+          } else {
+            tbody.innerHTML = data.events.map(e => {
+              const cls  = e.verdict === "granted" ? "ev-granted" : "ev-denied";
+              const viol = e.violations.length ? e.violations.join(", ") : "—";
+              return `<tr class="${cls}">
+                <td>${e.timestamp}</td>
+                <td>${e.verdict.toUpperCase()}</td>
+                <td>${viol}</td>
+              </tr>`;
+            }).join("");
+          }
+          document.getElementById("page-info").textContent = "Page " + data.page;
+          document.getElementById("btn-prev").disabled = data.page <= 1;
+          document.getElementById("btn-next").disabled = !data.has_more;
+        });
+    }
+
+    function changePage(delta) {
+      currentPage = Math.max(1, currentPage + delta);
+      loadEvents(currentPage);
+    }
+
+    loadStats();
+    loadEvents(currentPage);
+  </script>
+</body>
+</html>

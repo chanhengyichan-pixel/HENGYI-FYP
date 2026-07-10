@@ -56,6 +56,36 @@ ORDER BY timestamp DESC, id DESC
 LIMIT ?
 """
 
+# Fetches limit+1 rows so the caller can detect whether a next page exists
+# without a separate COUNT query.  The extra row is never returned to the
+# caller — it is trimmed after the has_more flag is set.
+_SELECT_ALL_PAGINATED = """
+SELECT timestamp, verdict, violations
+FROM events
+ORDER BY timestamp DESC, id DESC
+LIMIT ? OFFSET ?
+"""
+
+# Counts granted/denied totals in a single pass.
+_SELECT_TOTALS = """
+SELECT
+    COUNT(*)                                    AS total,
+    SUM(CASE WHEN verdict = 'granted' THEN 1 ELSE 0 END) AS granted,
+    SUM(CASE WHEN verdict = 'denied'  THEN 1 ELSE 0 END) AS denied
+FROM events
+"""
+
+# json_each() unnests the JSON array stored in the violations column so
+# SQLite can aggregate individual violation strings without pulling all
+# rows into Python.  Available since SQLite 3.38 (this project's bundled
+# version is 3.45.1, verified at development time).
+_SELECT_VIOLATION_COUNTS = """
+SELECT j.value AS violation, COUNT(*) AS cnt
+FROM events, json_each(events.violations) AS j
+GROUP BY j.value
+ORDER BY cnt DESC
+"""
+
 
 class EventStore:
     def __init__(self, config: dict):
@@ -77,6 +107,75 @@ class EventStore:
                 violations_json,
             ))
             self._conn.commit()
+
+    def get_stats(self) -> dict:
+        """Return aggregate statistics computed entirely in SQL.
+
+        Returns a dict with keys:
+          total_events (int), granted_count (int), denied_count (int),
+          violation_counts (dict[str, int]) — each violation string mapped
+          to the number of events that contained it.
+
+        Violation unnesting uses SQLite's json_each() table-valued function
+        (available since SQLite 3.38; verified against the project's bundled
+        3.45.1).  This avoids pulling every row into Python just to count
+        strings — the aggregation happens entirely in the database engine.
+        A Python-side fallback was considered but not implemented: it would
+        silently give wrong results if json_each() were absent rather than
+        failing visibly, and the SQLite version floor is well within the
+        range of every supported Python 3.12 distribution.
+        """
+        with self._lock:
+            if self._conn is None:
+                return {"total_events": 0, "granted_count": 0,
+                        "denied_count": 0, "violation_counts": {}}
+            row = self._conn.execute(_SELECT_TOTALS).fetchone()
+            total, granted, denied = row[0], row[1] or 0, row[2] or 0
+            viol_rows = self._conn.execute(_SELECT_VIOLATION_COUNTS).fetchall()
+        violation_counts = {r[0]: r[1] for r in viol_rows}
+        return {
+            "total_events":    total,
+            "granted_count":   granted,
+            "denied_count":    denied,
+            "violation_counts": violation_counts,
+        }
+
+    def get_all_events(self, limit: int = 50, offset: int = 0) -> dict:
+        """Return a paginated slice of the full event history, newest first.
+
+        Uses SQL LIMIT/OFFSET — no Python-side slicing.  Callers use offset
+        to implement page navigation: page N starts at offset (N-1)*limit.
+
+        Probes limit+1 rows to determine has_more without a separate COUNT
+        query.  The probe row is trimmed before returning; only `limit` rows
+        (or fewer) appear in the result.  This correctly handles the boundary
+        case where total events is an exact multiple of limit — the last full
+        page returns has_more=False rather than True.
+
+        Returns a dict: {"events": list[dict], "has_more": bool}
+
+        Date-range filtering would be a natural extension of this method
+        (add optional start/end timestamp parameters and a WHERE clause)
+        but is out of scope for Milestone 13.
+        """
+        with self._lock:
+            if self._conn is None:
+                return {"events": [], "has_more": False}
+            cursor = self._conn.execute(_SELECT_ALL_PAGINATED, (limit + 1, offset))
+            rows = cursor.fetchall()
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        return {
+            "events": [
+                {
+                    "timestamp":  row[0],
+                    "verdict":    row[1],
+                    "violations": json.loads(row[2]),
+                }
+                for row in rows
+            ],
+            "has_more": has_more,
+        }
 
     def close(self) -> None:
         """Close the SQLite connection cleanly.

@@ -172,6 +172,146 @@ class TestClose:
 
 
 # ---------------------------------------------------------------------------
+# get_stats()
+# ---------------------------------------------------------------------------
+
+class TestGetStats:
+    def test_empty_store_returns_zero_stats(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        stats = store.get_stats()
+        assert stats["total_events"]    == 0
+        assert stats["granted_count"]   == 0
+        assert stats["denied_count"]    == 0
+        assert stats["violation_counts"] == {}
+
+    def test_totals_match_appended_events(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        store.append(make_event("granted"))
+        store.append(make_event("granted"))
+        store.append(make_event("denied", violations=["no-helmet"]))
+        stats = store.get_stats()
+        assert stats["total_events"]  == 3
+        assert stats["granted_count"] == 2
+        assert stats["denied_count"]  == 1
+
+    def test_violation_counts_are_per_event_not_per_entry(self, tmp_path):
+        # "no-helmet" appears in 2 different events → count is 2.
+        store = EventStore(make_config(tmp_path))
+        store.append(make_event("denied", violations=["no-helmet"]))
+        store.append(make_event("denied", violations=["no-helmet", "no-vest"]))
+        store.append(make_event("denied", violations=["no-vest"]))
+        stats = store.get_stats()
+        assert stats["violation_counts"]["no-helmet"] == 2
+        assert stats["violation_counts"]["no-vest"]   == 2
+
+    def test_granted_events_with_no_violations_not_counted(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        store.append(make_event("granted", violations=[]))
+        store.append(make_event("denied",  violations=["no-helmet"]))
+        stats = store.get_stats()
+        assert "no-helmet" in stats["violation_counts"]
+        assert stats["violation_counts"]["no-helmet"] == 1
+        # Granted event contributed no violation strings.
+        assert sum(stats["violation_counts"].values()) == 1
+
+    def test_stats_after_close_returns_zeros(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        store.append(make_event("granted"))
+        store.close()
+        stats = store.get_stats()
+        assert stats["total_events"] == 0
+
+
+# ---------------------------------------------------------------------------
+# get_all_events() — pagination
+# ---------------------------------------------------------------------------
+
+class TestGetAllEvents:
+    def test_returns_all_events_when_below_limit(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        for i in range(5):
+            store.append(make_event("granted", ts=f"2026-07-10 07:00:{i:02d}"))
+        result = store.get_all_events(limit=25, offset=0)
+        assert len(result["events"]) == 5
+        assert result["has_more"] is False
+
+    def test_newest_first_ordering(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        for i in range(3):
+            store.append(make_event("granted", ts=f"2026-07-10 07:00:{i:02d}"))
+        events = store.get_all_events(limit=25, offset=0)["events"]
+        assert events[0]["timestamp"] == "2026-07-10 07:00:02"
+        assert events[2]["timestamp"] == "2026-07-10 07:00:00"
+
+    def test_page1_and_page2_do_not_overlap(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        for i in range(10):
+            store.append(make_event("denied", ts=f"2026-07-10 07:00:{i:02d}"))
+        page1 = store.get_all_events(limit=4, offset=0)
+        page2 = store.get_all_events(limit=4, offset=4)
+        ts1 = {e["timestamp"] for e in page1["events"]}
+        ts2 = {e["timestamp"] for e in page2["events"]}
+        assert ts1.isdisjoint(ts2)
+        assert len(page1["events"]) == 4
+        assert len(page2["events"]) == 4
+
+    def test_has_more_true_when_more_rows_exist(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        for i in range(10):
+            store.append(make_event("denied", ts=f"2026-07-10 07:00:{i:02d}"))
+        result = store.get_all_events(limit=4, offset=0)
+        assert result["has_more"] is True
+        assert len(result["events"]) == 4  # probe row not leaked
+
+    def test_offset_beyond_total_returns_empty(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        for i in range(3):
+            store.append(make_event("granted"))
+        result = store.get_all_events(limit=25, offset=100)
+        assert result["events"] == []
+        assert result["has_more"] is False
+
+    def test_violations_decoded_correctly(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        store.append(make_event("denied", violations=["no-helmet", "no-vest"]))
+        events = store.get_all_events(limit=1, offset=0)["events"]
+        assert events[0]["violations"] == ["no-helmet", "no-vest"]
+
+    def test_returns_empty_after_close(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        store.append(make_event("granted"))
+        store.close()
+        result = store.get_all_events(limit=25, offset=0)
+        assert result["events"] == []
+        assert result["has_more"] is False
+
+    # ------------------------------------------------------------------
+    # Boundary: total events is an exact multiple of page size
+    # ------------------------------------------------------------------
+
+    def test_exact_page_boundary_last_page_has_more_false(self, tmp_path):
+        # 50 events, page size 25.  Page 2 is the last full page and must
+        # report has_more=False — the bug this test guards against was
+        # has_more = (len(events) == limit), which returns True here even
+        # though no page 3 exists.
+        store = EventStore(make_config(tmp_path))
+        for i in range(50):
+            store.append(make_event("denied", ts=f"2026-07-10 07:{i // 60:02d}:{i % 60:02d}"))
+
+        page1 = store.get_all_events(limit=25, offset=0)
+        assert len(page1["events"]) == 25
+        assert page1["has_more"] is True   # page 2 exists
+
+        page2 = store.get_all_events(limit=25, offset=25)
+        assert len(page2["events"]) == 25
+        assert page2["has_more"] is False  # no page 3 — this was the bug
+
+        page3 = store.get_all_events(limit=25, offset=50)
+        assert page3["events"] == []
+        assert page3["has_more"] is False
+
+
+# ---------------------------------------------------------------------------
 # Missing config key — fail fast
 # ---------------------------------------------------------------------------
 

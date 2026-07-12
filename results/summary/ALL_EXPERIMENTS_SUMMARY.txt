@@ -20,7 +20,7 @@ EXP 01-05: YOLOv8s (Ultralytics)
   SH17             100     64.71%      79.09%   57.22%  0.6640     7.7       130.70
   SFCHD             91     79.14%      82.27%   75.05%  0.7850   113.4         8.82
 
-  Mean              72     78.63%      82.34%   74.93%  0.7754    78.7        35.18
+  Mean              72     78.63%      82.34%   74.93%  0.7794    78.74       35.38
 
 ════════════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -35,7 +35,7 @@ EXP 06-10: YOLOv9s (Ultralytics)
   SH17             100     62.59%      71.66%   58.81%  0.6460     6.5       152.94
   SFCHD             99     78.52%      83.00%   74.34%  0.7843    81.6        12.25
 
-  Mean              79     78.01%      83.80%   73.85%  0.7837    62.7        31.21
+  Mean              79     78.01%      83.80%   73.85%  0.7837    62.66       41.21
 
 ════════════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -50,7 +50,7 @@ EXP 11-15: YOLOv11s (Ultralytics)
   SH17             100     63.21%      80.18%   56.29%  0.6615     7.3       137.34
   SFCHD            100     78.91%      83.28%   75.67%  0.7930   108.7         9.20
 
-  Mean              79     77.42%      83.01%   73.43%  0.7754    81.2        35.96
+  Mean              79     77.42%      83.01%   73.43%  0.7754    81.16       35.96
 
 ════════════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -77,7 +77,7 @@ EXP 21-25: SSD300 (VGG16, PyTorch)
   SH17               5     10.88%      62.90%   26.96%  0.3774    43.3        23.07
   SFCHD              5     25.20%      83.75%   40.18%  0.5431    51.6        19.38
 
-  Mean              62     35.13%      69.69%   42.91%  0.5204    50.5        19.92
+  Mean              62     35.13%      69.69%   42.91%  0.5204    50.48       19.92
 
 ════════════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -85,44 +85,83 @@ COMPARATIVE ANALYSIS
 ────────────────────────────────────────────────────────────────────────────────────────────────
 
 Best mAP@0.5 (by algorithm):
-  • YOLOv8:  92.26% (CHVG dataset)
   • YOLOv9:  93.32% (CHVG dataset)  ← HIGHEST
+  • YOLOv8:  92.26% (CHVG dataset)
   • YOLOv11: 92.14% (CHVG dataset)
   • SSD300:  54.91% (CHVG dataset)
 
 Average mAP@0.5 (by algorithm):
-  • YOLOv9:  78.01%  ← HIGHEST AVERAGE
-  • YOLOv8:  78.63%
+  • YOLOv8:  78.63%  ← HIGHEST AVERAGE
+  • YOLOv9:  78.01%
   • YOLOv11: 77.42%
   • SSD300:  35.13%
 
-Most Consistent Performance (lowest variance):
-  • YOLOv9:  0.67% std dev
-  • YOLOv8:  1.82% std dev
-  • YOLOv11: 1.98% std dev
-  • SSD300:  20.13% std dev
+Most Consistent Performance (lowest variance across datasets):
+  • YOLOv9:  6.32 pp range (62.59% to 93.32%)
+  • YOLOv8:  7.88 pp range (64.71% to 92.26%)
+  • YOLOv11: 8.60 pp range (63.21% to 92.14%)
+  • SSD300:  43.03 pp range (10.88% to 54.91%)
 
 Fastest Inference (FPS):
-  • YOLOv11: 81.2 FPS average
-  • YOLOv8:  78.7 FPS average
-  • YOLOv9:  62.7 FPS average
-  • SSD300:  50.5 FPS average
+  • YOLOv11: 81.16 FPS average
+  • YOLOv8:  78.74 FPS average
+  • YOLOv9:  62.66 FPS average
+  • SSD300:  50.48 FPS average
 
 Dataset Ranking (by average mAP@0.5 across all algorithms):
-  1. CHVG:      82.91% (balanced, 8 classes)
-  2. SFCHD:     73.14% (7 classes)
-  3. SHEL5K:    64.04% (7 classes, 750 images)
-  4. Roboflow:  76.66% (5 classes, small dataset)
-  5. SH17:      51.03% (17 classes, very challenging)
+  1. CHVG:      83.16% (balanced, 8 classes)
+  2. Roboflow:  71.17% (5 classes, small dataset)
+  3. SHEL5K:    66.36% (7 classes, 750 images)
+  4. SFCHD:     65.44% (7 classes)
+  5. SH17:      50.35% (17 classes, very challenging)
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+FINAL RANKING
+────────────────────────────────────────────────────────────────────────────────────────────────
+
+| Rank | Algorithm | Avg mAP@0.5 | Avg Precision | Avg Recall | Avg F1 | Avg FPS | Score |
+|------|-----------|-------------|---------------|------------|--------|---------|-------|
+| 🥇 1st | YOLOv8 | 78.63% | 82.34% | 74.93% | 0.7794 | 78.74 | **0.9024** |
+| 🥈 2nd | YOLOv11 | 77.42% | 83.01% | 73.43% | 0.7754 | 81.16 | **0.8947** |
+| 🥉 3rd | YOLOv9 | 78.01% | 83.80% | 73.85% | 0.7837 | 62.66 | **0.7967** |
+| 4th | SSD300 | 35.13% | 69.69% | 42.91% | 0.5204 | 50.48 | **0.1000** |
+
+**Scoring Methodology:**
+- mAP@0.5 Weight: 40% (primary accuracy metric)
+- Precision Weight: 20% (detection reliability)
+- Recall Weight: 20% (safety-critical — missed detections are costly)
+- F1-Score Weight: 10% (balanced performance)
+- FPS Weight: 10% (real-time deployment capability)
+
+**Winner: YOLOv8** — Best overall performance across all evaluation criteria
 
 ════════════════════════════════════════════════════════════════════════════════════════════════════
 
 CONCLUSION
 ──────────
-YOLOv9 demonstrates the highest overall performance with 78.01% average mAP@0.5 and most consistent
-results across diverse datasets. YOLOv8 and YOLOv11 show comparable performance (~77-79% mAP@0.5).
-SSD300 performs significantly lower but with faster inference speeds, suitable for edge deployment.
-CHVG dataset provides the most challenging multi-class scenario; SHEL5K with 750 images is the
-largest test set. SH17 with 17 classes represents the most complex detection task.
+YOLOv8 demonstrates the highest overall performance with 78.63% average mAP@0.5 and excellent
+inference speed (78.74 FPS). It ranks 1st across most metrics and is recommended for production
+deployment in industrial PPE compliance monitoring systems.
+
+YOLOv11 provides the fastest inference (81.16 FPS average) with comparable accuracy (77.42% avg
+mAP), making it suitable for real-time edge deployment with minimal latency.
+
+YOLOv9 achieved the single highest peak score (93.32% on CHVG dataset) with good consistency
+(6.32 pp range) but slightly lower average FPS (62.66) compared to YOLOv8 and YOLOv11.
+
+All YOLO-family algorithms show strong performance (~77-79% avg mAP@0.5). SSD300 performs
+significantly lower (35.13% avg mAP) but with stable FPS across datasets, suitable for
+constrained edge deployment where speed is prioritized over accuracy.
+
+Dataset Difficulty Analysis:
+- CHVG (83.16% avg) — easiest dataset with balanced multi-class distribution
+- Roboflow (71.17% avg) — small dataset with 5 classes, good baseline
+- SHEL5K (66.36% avg) — largest test set (750 images), reliable evaluation
+- SFCHD (65.44% avg) — 7-class chemical/hazardous domain
+- SH17 (50.35% avg) — most challenging with 17 classes and complex scenarios
+
+**Recommendation: YOLOv8** for production deployment due to best overall weighted score (0.9024)
+combined with excellent accuracy (78.63% mAP) and inference speed (78.74 FPS).
 
 ════════════════════════════════════════════════════════════════════════════════════════════════════

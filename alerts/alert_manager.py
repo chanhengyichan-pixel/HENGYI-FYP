@@ -24,11 +24,12 @@ class AlertManager:
     def __init__(self, handlers: list[BaseHandler]):
         self._handlers = handlers
 
-    def notify(self, session_state, frame_verdict, frame) -> None:
+    def notify(self, session_state, frame_verdict, frame,
+               worker_name: str | None = None) -> None:
         """Dispatch the current pipeline state to all registered handlers."""
         for handler in self._handlers:
             try:
-                handler.handle(session_state, frame_verdict, frame)
+                handler.handle(session_state, frame_verdict, frame, worker_name)
             except Exception:
                 logger.exception(
                     "Handler %s raised an unhandled exception — skipping.",

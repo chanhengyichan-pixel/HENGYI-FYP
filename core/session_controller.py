@@ -53,6 +53,34 @@ computation ever becomes non-trivial (e.g. per-person spatial
 attribution under a future Strategy B), this decision should be
 revisited.
 
+Known limitation — session identity
+------------------------------------
+The session controller assumes person-presence continuity, not
+verified per-person identity.  If Worker A leaves the camera's field
+of view and Worker B enters before any single frame reports NO_PERSON
+(e.g. a fast handoff, or A and B briefly overlapping), the controller
+continues the in-progress EVALUATING session as if it were still
+Worker A — votes accumulated for A are counted toward the session that
+will grant or deny B.
+
+Root cause: FrameVerdict carries no person-identity information.  This
+is a direct consequence of the Strategy A detector schema chosen in
+Milestone 2: the YOLOv8 output is a flat list of class detections with
+no spatial tracking, no re-identification embedding, and no per-track
+ID.  The controller has no signal to distinguish "same person, still
+present" from "different person, no gap between them."
+
+A bounding-box jump heuristic was considered as a stopgap (flag large
+between-frame centroid displacement as a probable new person) but was
+explicitly deferred: it would be unreliable under occlusion, lateral
+movement, or multiple simultaneous detections and would add complexity
+without actually solving the problem.
+
+Resolution: deferred by design to Milestone 12 (face recognition +
+worker registration), where real per-person identity enters the system
+via a dedicated recognition module.  That is the correct place to fix
+this — not here.
+
 Coupling note
 -------------
 This module imports FrameVerdict and ComplianceStatus from
@@ -95,6 +123,38 @@ class SessionController:
     @property
     def state(self) -> SessionState:
         return self._state
+
+    @property
+    def is_last_evaluating_frame(self) -> bool:
+        """True when the NEXT update() call will complete the evaluation window.
+
+        Used by Pipeline to time the second identity check — identify() is
+        called on this frame (before update()), so that if a worker swap is
+        detected, reset() can be called instead of allowing the decision to
+        proceed.  Checked before update(), not after, because after the final
+        update() the state is already GRANTED or DENIED.
+        """
+        return (
+            self._state is SessionState.EVALUATING
+            and len(self._votes) == self._evaluating_frame_count - 1
+        )
+
+    def reset(self) -> None:
+        """Force the session back to IDLE, discarding any in-progress evaluation.
+
+        Called by Pipeline when a worker swap is detected: two confident face
+        identity checks within the same session returned different names.
+        This is the deferred fix for the session-identity gap documented in
+        the module docstring — previously, a worker swap with no NO_PERSON
+        frame between them was indistinguishable from one continuous person.
+
+        Safe to call from any state (e.g. if somehow called during COOLDOWN,
+        it will still reset cleanly to IDLE).
+        """
+        self._state = SessionState.IDLE
+        self._votes = []
+        self._hold_start = 0.0
+        self._cooldown_start = 0.0
 
     def update(self, verdict: FrameVerdict) -> SessionState:
         """

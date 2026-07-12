@@ -92,7 +92,7 @@ class VoiceHandler(BaseHandler):
 
         self._last_played_state = None  # debounce: same pattern as ScreenshotHandler
 
-    def handle(self, session_state, frame_verdict, frame) -> None:
+    def handle(self, session_state, frame_verdict, frame, worker_name=None) -> None:
         if session_state not in _TRIGGER_STATES:
             self._last_played_state = None
             return

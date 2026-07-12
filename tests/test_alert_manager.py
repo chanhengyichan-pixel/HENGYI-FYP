@@ -27,24 +27,30 @@ class TestAllHandlersCalled:
     def test_single_handler_called(self):
         h = make_handler()
         am = AlertManager([h])
-        am.notify(IDLE, VERDICT, FRAME)
-        h.handle.assert_called_once_with(IDLE, VERDICT, FRAME)
+        am.notify(IDLE, VERDICT, FRAME, worker_name=None)
+        h.handle.assert_called_once_with(IDLE, VERDICT, FRAME, None)
 
     def test_multiple_handlers_all_called(self):
         h1, h2, h3 = make_handler(), make_handler(), make_handler()
         am = AlertManager([h1, h2, h3])
-        am.notify(IDLE, VERDICT, FRAME)
-        h1.handle.assert_called_once_with(IDLE, VERDICT, FRAME)
-        h2.handle.assert_called_once_with(IDLE, VERDICT, FRAME)
-        h3.handle.assert_called_once_with(IDLE, VERDICT, FRAME)
+        am.notify(IDLE, VERDICT, FRAME, worker_name=None)
+        h1.handle.assert_called_once_with(IDLE, VERDICT, FRAME, None)
+        h2.handle.assert_called_once_with(IDLE, VERDICT, FRAME, None)
+        h3.handle.assert_called_once_with(IDLE, VERDICT, FRAME, None)
 
     def test_correct_arguments_forwarded(self):
         h = make_handler()
         am = AlertManager([h])
         verdict = FrameVerdict(status=ComplianceStatus.NON_COMPLIANT,
                                violations=["no-helmet"], person_count=1)
-        am.notify(SessionState.DENIED, verdict, b"fake_frame")
-        h.handle.assert_called_once_with(SessionState.DENIED, verdict, b"fake_frame")
+        am.notify(SessionState.DENIED, verdict, b"fake_frame", worker_name="Alice")
+        h.handle.assert_called_once_with(SessionState.DENIED, verdict, b"fake_frame", "Alice")
+
+    def test_worker_name_defaults_to_none(self):
+        h = make_handler()
+        am = AlertManager([h])
+        am.notify(IDLE, VERDICT, FRAME)  # no worker_name kwarg
+        h.handle.assert_called_once_with(IDLE, VERDICT, FRAME, None)
 
     def test_empty_handler_list_does_not_raise(self):
         am = AlertManager([])
@@ -60,7 +66,7 @@ class TestExceptionIsolation:
         am = AlertManager([bad, good])
         am.notify(IDLE, VERDICT, FRAME)  # must not raise
 
-        good.handle.assert_called_once_with(IDLE, VERDICT, FRAME)
+        good.handle.assert_called_once_with(IDLE, VERDICT, FRAME, None)
 
     def test_exception_is_logged_not_re_raised(self, caplog):
         bad = make_handler()

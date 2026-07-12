@@ -21,6 +21,18 @@ alerts:
 storage:
   db_path: "output/events.db"
 
+workers:
+  db_path: "output/workers.db"
+
+# match_threshold is a MAXIMUM LBPH distance (lower distance = better match).
+# This is the opposite convention from Detector.confidence_threshold —
+# see core/face_recognizer.py docstring for the full explanation.
+# 75.0 is a reasonable starting point; real-world tuning against enrolled
+# workers is a known required calibration step before deployment.
+face:
+  model_path: "models/face_recognizer.yml"
+  match_threshold: 75.0
+
 # Placeholder WAV files — replace with real recorded reminders before deployment.
 voice:
   granted_sound: "assets/audio/granted.wav"

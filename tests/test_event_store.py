@@ -16,8 +16,20 @@ def make_config(tmp_path):
     return {"storage": {"db_path": str(tmp_path / "events.db")}}
 
 
-def make_event(verdict, ts="2026-07-09 07:00:00", violations=None):
-    return {"timestamp": ts, "verdict": verdict, "violations": violations or []}
+def make_event(verdict, ts="2026-07-09 07:00:00", violations=None,
+               worker_name="unknown"):
+    """Build a complete event dict including worker_name.
+
+    worker_name defaults to "unknown" to match what EventStore returns for
+    rows stored without an explicit name (NULL is coerced to "unknown" by
+    COALESCE in the SELECT queries).
+    """
+    return {
+        "timestamp":   ts,
+        "verdict":     verdict,
+        "violations":  violations or [],
+        "worker_name": worker_name,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +321,77 @@ class TestGetAllEvents:
         page3 = store.get_all_events(limit=25, offset=50)
         assert page3["events"] == []
         assert page3["has_more"] is False
+
+
+# ---------------------------------------------------------------------------
+# worker_name — storage and retrieval
+# ---------------------------------------------------------------------------
+
+class TestWorkerName:
+    def test_worker_name_persists_through_append_and_get_recent(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        store.append(make_event("granted", worker_name="Alice"))
+        result = store.get_recent(1)
+        assert result[0]["worker_name"] == "Alice"
+
+    def test_worker_name_persists_through_get_all_events(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        store.append(make_event("denied", worker_name="Bob"))
+        events = store.get_all_events(limit=10, offset=0)["events"]
+        assert events[0]["worker_name"] == "Bob"
+
+    def test_none_worker_name_stored_and_read_back_as_unknown(self, tmp_path):
+        """append() with worker_name=None stores NULL; reads back as 'unknown'."""
+        store = EventStore(make_config(tmp_path))
+        event = {"timestamp": "2026-07-09 07:00:00", "verdict": "granted",
+                 "violations": [], "worker_name": None}
+        store.append(event)
+        result = store.get_recent(1)
+        assert result[0]["worker_name"] == "unknown"
+
+    def test_missing_worker_name_key_stored_as_unknown(self, tmp_path):
+        """append() with no worker_name key also stores NULL → reads as 'unknown'."""
+        store = EventStore(make_config(tmp_path))
+        event = {"timestamp": "2026-07-09 07:00:00", "verdict": "denied",
+                 "violations": ["no-helmet"]}
+        store.append(event)
+        result = store.get_recent(1)
+        assert result[0]["worker_name"] == "unknown"
+
+    def test_pre_migration_row_null_coerced_to_unknown(self, tmp_path):
+        """Simulates a pre-migration database row (no worker_name column value).
+
+        Manually inserts a row with worker_name = NULL — as would appear in a
+        database created before the Milestone 12 schema migration — then reads
+        it back via EventStore to confirm COALESCE returns 'unknown'.
+        """
+        config = make_config(tmp_path)
+        db_path = config["storage"]["db_path"]
+
+        # Create the table with the worker_name column (migration already
+        # runs in __init__), then insert a row with explicit NULL.
+        store = EventStore(config)
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO events (timestamp, verdict, violations, worker_name) "
+            "VALUES (?, ?, ?, NULL)",
+            ("2026-07-09 07:00:00", "granted", "[]"),
+        )
+        conn.commit()
+        conn.close()
+
+        result = store.get_recent(1)
+        assert result[0]["worker_name"] == "unknown"
+
+    def test_multiple_workers_stored_independently(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        store.append(make_event("granted", ts="2026-07-09 07:00:01",
+                                worker_name="Alice"))
+        store.append(make_event("denied",  ts="2026-07-09 07:00:02",
+                                worker_name="Bob"))
+        result = store.get_recent(2)
+        assert result[0]["worker_name"] == "Bob"    # newest first
+        assert result[1]["worker_name"] == "Alice"
 
 
 # ---------------------------------------------------------------------------

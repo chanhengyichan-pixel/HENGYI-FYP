@@ -354,10 +354,10 @@
       <div class="card-hdr">Full Event History</div>
       <table>
         <thead>
-          <tr><th>Timestamp</th><th>Decision</th><th>Violations</th></tr>
+          <tr><th>Timestamp</th><th>Worker</th><th>Decision</th><th>Violations</th></tr>
         </thead>
         <tbody id="events-tbody">
-          <tr class="no-events"><td colspan="3">Loading...</td></tr>
+          <tr class="no-events"><td colspan="4">Loading...</td></tr>
         </tbody>
       </table>
       <div id="pagination">
@@ -417,13 +417,15 @@
         .then(data => {
           const tbody = document.getElementById("events-tbody");
           if (data.events.length === 0) {
-            tbody.innerHTML = '<tr class="no-events"><td colspan="3">No events yet.</td></tr>';
+            tbody.innerHTML = '<tr class="no-events"><td colspan="4">No events yet.</td></tr>';
           } else {
             tbody.innerHTML = data.events.map(e => {
-              const cls  = e.verdict === "granted" ? "ev-granted" : "ev-denied";
-              const viol = e.violations.length ? e.violations.join(", ") : "—";
+              const cls    = e.verdict === "granted" ? "ev-granted" : "ev-denied";
+              const viol   = e.violations.length ? e.violations.join(", ") : "—";
+              const worker = e.worker_name || "unknown";
               return `<tr class="${cls}">
                 <td>${e.timestamp}</td>
+                <td>${worker}</td>
                 <td>${e.verdict.toUpperCase()}</td>
                 <td>${viol}</td>
               </tr>`;

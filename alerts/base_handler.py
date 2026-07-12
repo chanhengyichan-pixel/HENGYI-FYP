@@ -5,7 +5,7 @@ Contract
 --------
 Every handler implements a single method:
 
-    handle(session_state, frame_verdict, frame) -> None
+    handle(session_state, frame_verdict, frame, worker_name) -> None
 
 Parameters
 ----------
@@ -22,6 +22,17 @@ frame : numpy.ndarray | None
     May be None if the camera has not yet produced a frame.  Handlers that
     save or display the frame must check for None before use.
 
+Parameters (continued)
+----------------------
+worker_name : str | None
+    The confidently identified worker for the current session, as
+    determined by FaceRecognizer at session opening (IDLE →
+    PERSON_DETECTED transition).  None means "identity unknown" —
+    either face recognition is not configured, no enrolled worker
+    matched, or the face was not visible at the identity check.
+    None does NOT mean "no person present"; that is expressed by
+    session_state being IDLE or NO_PERSON in the verdict.
+
 Design notes
 ------------
 - Handlers are called on EVERY pipeline loop iteration (not just on
@@ -36,5 +47,5 @@ from abc import ABC, abstractmethod
 
 class BaseHandler(ABC):
     @abstractmethod
-    def handle(self, session_state, frame_verdict, frame) -> None:
+    def handle(self, session_state, frame_verdict, frame, worker_name) -> None:
         """Process one pipeline cycle's worth of state."""

@@ -10,11 +10,13 @@ from core.detector import Detector
 from core.decision_engine import DecisionEngine
 from core.session_controller import SessionController
 from core.pipeline import Pipeline
+from core.face_recognizer import FaceRecognizer
 from alerts.alert_manager import AlertManager
 from alerts.screenshot_handler import ScreenshotHandler
 from alerts.voice_handler import VoiceHandler
 from alerts.event_log_handler import EventLogHandler
 from storage.event_store import EventStore
+from storage.worker_store import WorkerStore
 from dashboard.app import create_app
 
 logging.basicConfig(
@@ -33,18 +35,21 @@ def main():
 
     shared_state = SharedState()
     event_store = EventStore(config)
+    worker_store = WorkerStore(config)
 
     camera = CameraCapture(config, shared_state)
     detector = Detector(config)
     decision_engine = DecisionEngine()
     session_controller = SessionController(config)
+    face_recognizer = FaceRecognizer(config, worker_store)
     alert_manager = AlertManager([
         ScreenshotHandler(config),
         VoiceHandler(config),
         EventLogHandler(event_store),
     ])
     pipeline = Pipeline(config, shared_state, camera, detector,
-                        decision_engine, session_controller, alert_manager)
+                        decision_engine, session_controller, alert_manager,
+                        face_recognizer=face_recognizer)
 
     try:
         camera.start()
@@ -91,6 +96,7 @@ def main():
         pipeline.stop()
         camera.stop()
         event_store.close()
+        worker_store.close()
         logger.info("Done.")
 
 

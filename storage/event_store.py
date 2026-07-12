@@ -31,6 +31,23 @@ Schema
 ------
 CREATE TABLE IF NOT EXISTS ensures a fresh deployment (including the Pi)
 creates the database file and schema automatically — zero manual setup.
+
+Schema migration — worker_name column
+--------------------------------------
+worker_name TEXT was added after the initial schema (Milestone 12).
+CREATE TABLE IF NOT EXISTS does NOT add new columns to existing databases,
+so an explicit ALTER TABLE migration is run after the CREATE statement.
+The migration is idempotent: sqlite3.OperationalError ("duplicate column
+name") is caught and ignored.  This is safe against three cases:
+  1. Fresh database — CREATE TABLE adds the column; ALTER TABLE is a no-op
+     that raises the error (caught and ignored).  Actually: fresh DB, CREATE
+     makes the table including the new column from the _CREATE_TABLE
+     definition, so ALTER TABLE raises immediately — handled.
+  2. Already-migrated database — ALTER TABLE raises "duplicate column name"
+     (caught and ignored).
+  3. Pre-migration database (Milestone 11/13 data without worker_name) —
+     ALTER TABLE adds the column; existing rows will have NULL for
+     worker_name, which get_recent()/get_all_events() coerce to "unknown".
 """
 
 import json
@@ -40,17 +57,28 @@ import threading
 
 _CREATE_TABLE = """
 CREATE TABLE IF NOT EXISTS events (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT    NOT NULL,
-    verdict   TEXT    NOT NULL,
-    violations TEXT   NOT NULL
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp   TEXT    NOT NULL,
+    verdict     TEXT    NOT NULL,
+    violations  TEXT    NOT NULL,
+    worker_name TEXT
 )
 """
 
-_INSERT = "INSERT INTO events (timestamp, verdict, violations) VALUES (?, ?, ?)"
+# Idempotent migration: add worker_name to databases created before this
+# column existed.  OperationalError is raised if the column is already
+# present (fresh DB or already-migrated DB) — silently ignored in both cases.
+_ADD_WORKER_NAME_COLUMN = "ALTER TABLE events ADD COLUMN worker_name TEXT"
 
+_INSERT = """
+INSERT INTO events (timestamp, verdict, violations, worker_name)
+VALUES (?, ?, ?, ?)
+"""
+
+# NULL worker_name (rows from before the migration) is coerced to "unknown"
+# at read time via COALESCE so callers always receive a string, never None.
 _SELECT_RECENT = """
-SELECT timestamp, verdict, violations
+SELECT timestamp, verdict, violations, COALESCE(worker_name, 'unknown')
 FROM events
 ORDER BY timestamp DESC, id DESC
 LIMIT ?
@@ -60,7 +88,7 @@ LIMIT ?
 # without a separate COUNT query.  The extra row is never returned to the
 # caller — it is trimmed after the has_more flag is set.
 _SELECT_ALL_PAGINATED = """
-SELECT timestamp, verdict, violations
+SELECT timestamp, verdict, violations, COALESCE(worker_name, 'unknown')
 FROM events
 ORDER BY timestamp DESC, id DESC
 LIMIT ? OFFSET ?
@@ -93,6 +121,10 @@ class EventStore:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute(_CREATE_TABLE)
+        try:
+            self._conn.execute(_ADD_WORKER_NAME_COLUMN)
+        except sqlite3.OperationalError:
+            pass  # column already exists — fresh DB or already migrated
         self._conn.commit()
 
     def append(self, event: dict) -> None:
@@ -105,6 +137,7 @@ class EventStore:
                 event["timestamp"],
                 event["verdict"],
                 violations_json,
+                event.get("worker_name"),  # None if caller omitted it
             ))
             self._conn.commit()
 
@@ -168,9 +201,10 @@ class EventStore:
         return {
             "events": [
                 {
-                    "timestamp":  row[0],
-                    "verdict":    row[1],
-                    "violations": json.loads(row[2]),
+                    "timestamp":   row[0],
+                    "verdict":     row[1],
+                    "violations":  json.loads(row[2]),
+                    "worker_name": row[3],
                 }
                 for row in rows
             ],
@@ -205,9 +239,10 @@ class EventStore:
             rows = cursor.fetchall()
         return [
             {
-                "timestamp":  row[0],
-                "verdict":    row[1],
-                "violations": json.loads(row[2]),
+                "timestamp":   row[0],
+                "verdict":     row[1],
+                "violations":  json.loads(row[2]),
+                "worker_name": row[3],
             }
             for row in rows
         ]

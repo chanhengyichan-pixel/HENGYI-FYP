@@ -49,7 +49,7 @@ class ScreenshotHandler(BaseHandler):
         self._screenshot_dir.mkdir(parents=True, exist_ok=True)
         self._last_captured_state = None
 
-    def handle(self, session_state, frame_verdict, frame) -> None:
+    def handle(self, session_state, frame_verdict, frame, worker_name=None) -> None:
         if session_state not in _TRIGGER_STATES:
             # Outside a decision hold — reset so next entry fires.
             self._last_captured_state = None

@@ -270,3 +270,40 @@ class TestTimingEdgeCases:
         ctrl.update(COMPLIANT)     # → COOLDOWN
         feed(ctrl, NON_COMPLIANT, 20)
         assert ctrl.state is SessionState.COOLDOWN
+
+
+# ---------------------------------------------------------------------------
+# Session identity limitation (documented behavior, not a bug)
+# ---------------------------------------------------------------------------
+
+class TestSessionIdentityLimitation:
+    def test_fast_worker_handoff_without_empty_frame_continues_session(self):
+        # DOCUMENTED LIMITATION — see module docstring "Known limitation —
+        # session identity" for full explanation.
+        #
+        # Scenario: Worker A partially evaluates (3 non-compliant votes),
+        # then immediately leaves and Worker B (compliant) enters — but there
+        # is no NO_PERSON frame between them.  The controller has no identity
+        # signal, so it cannot detect the handoff and continues the in-progress
+        # session, mixing A's votes with B's.
+        #
+        # This test locks in the CURRENT behavior.  It is NOT asserting the
+        # desired long-term behavior (which would be a fresh session for B).
+        # Do not "fix" this test without implementing per-person identity in
+        # Milestone 12.
+        ctrl, _ = make_controller()
+
+        ctrl.update(NON_COMPLIANT)              # IDLE → PERSON_DETECTED (Worker A, no vote yet)
+        ctrl.update(NON_COMPLIANT)              # → EVALUATING, vote 1 (A: non-compliant)
+        ctrl.update(NON_COMPLIANT)              # vote 2 (A: non-compliant)
+        ctrl.update(NON_COMPLIANT)              # vote 3 (A: non-compliant)
+        # Worker A leaves / Worker B enters — no NO_PERSON frame.
+        # From here all frames are B (compliant), but session is NOT reset.
+        ctrl.update(COMPLIANT)                  # vote 4 (B: compliant, but mixed in)
+        ctrl.update(COMPLIANT)                  # vote 5 — window complete
+
+        # Current (limited) behavior: session was never reset, so the vote
+        # tally is 3 NON_COMPLIANT (A) vs 2 COMPLIANT (B) → DENIED.
+        # If identity were tracked properly, B's session should start fresh
+        # and would eventually GRANT after 5 compliant frames.
+        assert ctrl.state is SessionState.DENIED  # mixed A+B votes → wrong outcome for B

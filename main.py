@@ -30,9 +30,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main():
-    config = load_config()
+def run_dashboard(config: dict) -> None:
+    """Start the full access-control dashboard and block until shutdown (Ctrl+C).
 
+    Extracted verbatim from the original main() body — no logic changes.
+    Constructs every component, starts the camera + pipeline + Flask thread,
+    and runs the clean shutdown sequence on KeyboardInterrupt.
+
+    Called from _menu() for Choice 1.  When it returns, the caller exits
+    the program entirely — stopping the dashboard is shutting down the whole
+    system, not something you'd relaunch from a menu immediately.
+    """
     shared_state = SharedState()
     event_store = EventStore(config)
     worker_store = WorkerStore(config)
@@ -100,5 +108,64 @@ def main():
         logger.info("Done.")
 
 
+def _menu(config: dict) -> None:
+    """Interactive CLI menu shown before any hardware is touched.
+
+    Config is loaded once by the caller before entering here — fail-fast on
+    a bad config file before the user has picked anything.
+
+    Choice 1 — Dashboard: calls run_dashboard() and exits when it returns.
+      Stopping the dashboard is shutting down the whole access-control system;
+      we do not loop back to the menu afterward.
+
+    Choice 2 — Register Worker: prompts for a name, calls enroll_worker(),
+      prints a clear success/failure line, then loops back.  Enrolling
+      multiple workers in one sitting is an expected workflow.
+
+    Choice 3 — Exit: exits immediately.
+
+    The webcam is never opened until the user explicitly picks a mode.  This
+    prevents device contention between CameraCapture (dashboard) and the
+    direct cv2.VideoCapture in enroll_worker.py — both compete for the same
+    /dev/video0 device and will fail or produce garbled frames if run
+    simultaneously.
+    """
+    # Deferred import: enroll_worker.py inserts its parent directory into
+    # sys.path at module level.  Importing here (rather than at the top of
+    # main.py) keeps the import side-effect close to where it's needed and
+    # avoids loading cv2/numpy until the user actually requests enrollment.
+    from scripts.enroll_worker import enroll_worker
+
+    while True:
+        print("\n=== Safety Access Control System ===")
+        print("  1. Start Dashboard")
+        print("  2. Register New Worker")
+        print("  3. Exit")
+
+        choice = input("Choice: ").strip()
+
+        if choice == "1":
+            run_dashboard(config)
+            sys.exit(0)
+
+        elif choice == "2":
+            name = input("Worker name: ").strip()
+            if not name:
+                print("Name cannot be empty.")
+                continue
+            success = enroll_worker(name, config)
+            if success:
+                print(f"\nEnrollment successful: '{name}' is now registered.")
+            else:
+                print(f"\nEnrollment failed for '{name}'. See errors above.")
+
+        elif choice == "3":
+            sys.exit(0)
+
+        else:
+            print("Invalid choice — enter 1, 2, or 3.")
+
+
 if __name__ == "__main__":
-    main()
+    config = load_config()
+    _menu(config)

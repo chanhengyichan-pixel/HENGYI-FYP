@@ -4,7 +4,7 @@ Offline worker enrollment script.
 Captures face samples from the webcam, trains/updates the LBPH face
 recognizer, saves the model, and registers the worker in WorkerStore.
 
-Usage:
+Usage (standalone):
     cd /path/to/fyp2
     source venv/bin/activate
     python scripts/enroll_worker.py "Worker Name"
@@ -15,7 +15,9 @@ session and releases it when done, following the same pattern as
 scripts/inspect_classes.py.
 
 Do NOT run this while main.py is running (both would compete for the
-same webcam device).
+same webcam device).  The main.py menu (Choice 2) calls enroll_worker()
+from this module directly and guards against this by only presenting
+enrollment when the dashboard is not running.
 
 Manual verification after enrolling multiple workers
 -----------------------------------------------------
@@ -30,7 +32,7 @@ update() bug would have broken silently.
 import sys
 from pathlib import Path
 
-# Allow imports from the project root.
+# Allow imports from the project root whether run standalone or imported.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import cv2
@@ -39,22 +41,36 @@ import numpy as np
 from core.config_loader import load_config
 from storage.worker_store import WorkerStore
 
-_NUM_SAMPLES = 20       # face samples to capture per worker
-_SAMPLE_SIZE = (100, 100)  # resize all ROIs to this before training (consistent input)
+_NUM_SAMPLES = 20
+_SAMPLE_SIZE = (100, 100)
 _CASCADE_PATH = str(Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml")
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python scripts/enroll_worker.py \"Worker Name\"")
-        sys.exit(1)
+def enroll_worker(worker_name: str, config: dict) -> bool:
+    """Capture face samples, train/update the LBPH model, and register the worker.
 
-    worker_name = sys.argv[1].strip()
-    if not worker_name:
-        print("Error: worker name cannot be empty.")
-        sys.exit(1)
+    Parameters
+    ----------
+    worker_name : str
+        Display name for the worker.  Must be non-empty (caller's responsibility).
+    config : dict
+        Loaded application config (same object passed to all other components).
 
-    config = load_config()
+    Returns
+    -------
+    bool
+        True if enrollment completed successfully, False if it failed — e.g.
+        webcam could not be opened, or fewer than _NUM_SAMPLES faces were
+        captured before the webcam loop exited.
+
+    Side effects
+    ------------
+    - Writes/updates models/face_recognizer.yml (path from config["face"]["model_path"]).
+    - Inserts a new row in the workers database (config["workers"]["db_path"]).
+    Both writes are permanent; a False return means neither was completed
+    (WorkerStore entry IS written before capture so that label_id is reserved,
+    but the model is only written on success).
+    """
     model_path = Path(config["face"]["model_path"])
     model_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -78,7 +94,7 @@ def main():
     if not cap.isOpened():
         print("Error: could not open webcam.")
         worker_store.close()
-        sys.exit(1)
+        return False
 
     samples: list[np.ndarray] = []
     labels: list[int] = []
@@ -111,7 +127,7 @@ def main():
     if len(samples) < _NUM_SAMPLES:
         print(f"\nOnly captured {len(samples)} samples — enrollment incomplete.")
         worker_store.close()
-        sys.exit(1)
+        return False
 
     print(f"\nTraining model on {len(samples)} samples...")
     # train() replaces the model's entire training set — use it only for the
@@ -131,11 +147,23 @@ def main():
     existing = worker_store.get_all()
     print(f"\nAll registered workers ({len(existing)}):")
     for w in existing:
-        marker = " ← new" if w["label_id"] == label_id else ""
+        marker = " <- new" if w["label_id"] == label_id else ""
         print(f"  [{w['label_id']}] {w['name']}  (enrolled {w['enrolled_at']}){marker}")
 
     worker_store.close()
+    return True
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print('Usage: python scripts/enroll_worker.py "Worker Name"')
+        sys.exit(1)
+
+    name = sys.argv[1].strip()
+    if not name:
+        print("Error: worker name cannot be empty.")
+        sys.exit(1)
+
+    cfg = load_config()
+    success = enroll_worker(name, cfg)
+    sys.exit(0 if success else 1)

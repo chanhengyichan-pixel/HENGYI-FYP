@@ -287,3 +287,112 @@ class TestContainmentThreshold:
         v = engine.evaluate([person, mostly_outside_helmet, vest])
         assert v.status is ComplianceStatus.NON_COMPLIANT
         assert "no-helmet" in v.violations
+
+
+# ---------------------------------------------------------------------------
+# Debug diagnostic mode — calibration tool, gated by the debug parameter
+# ---------------------------------------------------------------------------
+
+class TestDebugDiagnostics:
+    def _detections(self):
+        person = _person()
+        helmet = _det("helmet", 150, 100, 250, 190)   # head-valid
+        vest = _det("vest", 130, 230, 270, 370)        # torso-valid
+        return [person, helmet, vest]
+
+    def test_debug_true_produces_log_output(self, engine, caplog):
+        with caplog.at_level("DEBUG", logger="core.decision_engine"):
+            engine.evaluate(self._detections(), debug=True)
+        assert len(caplog.records) > 0
+        assert any("claim-check" in r.message for r in caplog.records)
+        assert any("claim-outcome" in r.message for r in caplog.records)
+        assert any("Person 0:" in r.message for r in caplog.records)
+        assert any("Frame summary" in r.message for r in caplog.records)
+
+    def test_debug_false_by_default_produces_no_log_output(self, engine, caplog):
+        with caplog.at_level("DEBUG", logger="core.decision_engine"):
+            engine.evaluate(self._detections())
+        assert len(caplog.records) == 0
+
+    def test_debug_false_explicit_produces_no_log_output(self, engine, caplog):
+        with caplog.at_level("DEBUG", logger="core.decision_engine"):
+            engine.evaluate(self._detections(), debug=False)
+        assert len(caplog.records) == 0
+
+    def test_debug_false_leaves_debug_info_none(self, engine):
+        v = engine.evaluate(self._detections())
+        assert v.debug_info is None
+
+    def test_debug_false_explicit_leaves_debug_info_none(self, engine):
+        v = engine.evaluate(self._detections(), debug=False)
+        assert v.debug_info is None
+
+    def test_debug_true_populates_debug_info_structure(self, engine):
+        v = engine.evaluate(self._detections(), debug=True)
+        assert v.debug_info is not None
+
+        assert v.debug_info["frame"] == {
+            "person_count": 1,
+            "helmets_assigned": 1,
+            "vests_assigned": 1,
+            "status": "compliant",
+            "violations": [],
+        }
+
+        assert len(v.debug_info["persons"]) == 1
+        p = v.debug_info["persons"][0]
+        assert p["person_index"] == 0
+        assert p["person_status"] == "COMPLIANT"
+        assert p["helmet"]["assigned"] == "helmet"
+        assert p["vest"]["assigned"] == "vest"
+
+        helmet_candidate = p["helmet"]["candidates"][0]
+        assert helmet_candidate["class_name"] == "helmet"
+        assert helmet_candidate["status"] == "assigned"
+        assert helmet_candidate["reasons"] == []
+        assert helmet_candidate["containment_ok"] is True
+        assert helmet_candidate["region_ok"] is True
+
+    def test_x_axis_and_y_axis_rejections_produce_different_reason_text(self, engine, caplog):
+        # Same person both times; one helmet fails only the X band, the
+        # other fails only the Y band. The specific reason text must differ
+        # so a calibration engineer can tell which axis is the problem.
+        person = _person()
+        # High containment, but centroid.x=277.5 is outside x in [145,255].
+        helmet_x_fail = _det("helmet", 255, 105, 300, 195)
+        v_x = engine.evaluate([person, helmet_x_fail], debug=True)
+        x_candidate = v_x.debug_info["persons"][0]["helmet"]["candidates"][0]
+        assert x_candidate["x_ok"] is False
+        assert x_candidate["y_ok"] is True
+        assert any("centroid X outside" in r for r in x_candidate["reasons"])
+        assert not any("centroid Y outside" in r for r in x_candidate["reasons"])
+
+        person2 = _person()
+        # centroid.y=260 is outside head y in [100,200]; x=200 is in-band.
+        helmet_y_fail = _det("helmet", 150, 230, 250, 290)
+        v_y = engine.evaluate([person2, helmet_y_fail], debug=True)
+        y_candidate = v_y.debug_info["persons"][0]["helmet"]["candidates"][0]
+        assert y_candidate["y_ok"] is False
+        assert y_candidate["x_ok"] is True
+        assert any("centroid Y outside" in r for r in y_candidate["reasons"])
+        assert not any("centroid X outside" in r for r in y_candidate["reasons"])
+
+        # The distinguishing text must actually differ between the two cases.
+        assert x_candidate["reasons"] != y_candidate["reasons"]
+
+    def test_claimed_by_other_reported_for_later_person(self, engine):
+        # Person A (higher confidence, processed first) and person C both
+        # have head regions overlapping the same physical helmet box —
+        # A claims it; C's candidate list must report it as
+        # claimed_by_other, not omit it silently.
+        person_a = _person(x1=0, y1=0, x2=200, y2=400, confidence=0.95)
+        person_c = _person(x1=50, y1=0, x2=250, y2=400, confidence=0.80)
+        helmet_for_a = _det("helmet", 70, 0, 130, 90)
+
+        v = engine.evaluate([person_a, person_c, helmet_for_a], debug=True)
+
+        c_helmet_candidates = v.debug_info["persons"][1]["helmet"]["candidates"]
+        claimed_entries = [c for c in c_helmet_candidates if c["status"] == "claimed_by_other"]
+        assert len(claimed_entries) == 1
+        assert claimed_entries[0]["claimed_by"] == 0
+        assert "already claimed by person 0" in claimed_entries[0]["reasons"][0]

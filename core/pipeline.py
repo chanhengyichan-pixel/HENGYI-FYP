@@ -80,6 +80,10 @@ class Pipeline:
         self._detector = detector
         self._decision_engine = decision_engine
         self._session_controller = session_controller
+        # Calibration/diagnostic flag — see core/decision_engine.py's module
+        # docstring ("Debug diagnostic mode"). Read once at construction,
+        # not re-read every frame, since config does not change at runtime.
+        self._decision_debug = bool(config["decision_engine"]["debug"])
         self._alert_manager = alert_manager      # optional; None disables alerts
         self._face_recognizer = face_recognizer  # optional; None disables identity checks
 
@@ -135,7 +139,13 @@ class Pipeline:
             t_start = time.monotonic()
 
             detections = self._detector.detect(frame)
-            verdict = self._decision_engine.evaluate(detections)
+            verdict = self._decision_engine.evaluate(detections, debug=self._decision_debug)
+
+            # Diagnostic overlay data — only ever non-None when debug is on
+            # (see core/decision_engine.py). Written unconditionally (cheap
+            # None-write when off) so the dashboard always has a defined
+            # value to read rather than stale data from a previous run.
+            self._shared_state.set_latest_debug_info(verdict.debug_info)
 
             # Check BEFORE update() whether this frame will complete the
             # evaluation window — after update() the state is already

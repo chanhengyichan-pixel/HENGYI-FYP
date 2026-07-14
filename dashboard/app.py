@@ -23,6 +23,75 @@ _BOX_COLORS = {
 _DEFAULT_COLOR = (128, 128, 128)
 
 
+_STATUS_COLOR = {
+    "assigned": (0, 200, 0),          # green — PASS
+    "rejected": (0, 0, 220),          # red   — FAIL
+    "claimed_by_other": (0, 200, 220),  # yellow — valid candidate, lost tie-break
+}
+_REGION_COLOR = {
+    "head_region": (255, 200, 0),
+    "torso_region": (255, 140, 0),
+}
+_PERSON_BOX_COLOR = (0, 140, 255)
+
+
+def _draw_debug_overlay(frame, debug_info):
+    """
+    Draw DecisionEngine's per-frame calibration diagnostics onto `frame`.
+
+    `debug_info` is FrameVerdict.debug_info (see core/decision_engine.py's
+    module docstring for its exact structure) or None. A None debug_info
+    is the normal case whenever config["decision_engine"]["debug"] is
+    false (the default) — this function is a deliberate no-op in that
+    case: zero cv2 calls, so enabling debug_overlay costs nothing when
+    debug itself is off.
+
+    Kept entirely separate from _draw_detections(): decision_engine.py
+    does not draw (no cv2 import there, see its module docstring), so
+    this function — not DecisionEngine — owns the "how do we visualise
+    this" decision, consistent with the rest of the project's separation
+    between AI/decision modules and the dashboard's rendering layer.
+    """
+    if debug_info is None:
+        return
+
+    for person in debug_info["persons"]:
+        x1, y1, x2, y2 = person["box"]
+        cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)),
+                      _PERSON_BOX_COLOR, 2)
+        cv2.putText(
+            frame, f"person {person['person_index']} ({person['confidence']:.2f})",
+            (int(x1), max(int(y1) - 8, 0)),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.45, _PERSON_BOX_COLOR, 1,
+        )
+
+        for region_key in ("head_region", "torso_region"):
+            y_lo, y_hi, x_lo, x_hi = person[region_key]
+            cv2.rectangle(
+                frame, (int(x_lo), int(y_lo)), (int(x_hi), int(y_hi)),
+                _REGION_COLOR[region_key], 1,
+            )
+
+        for ppe_key in ("helmet", "vest"):
+            for candidate in person[ppe_key]["candidates"]:
+                cx, cy = candidate["centroid"]
+                color = _STATUS_COLOR.get(candidate["status"], _DEFAULT_COLOR)
+                cv2.drawMarker(
+                    frame, (int(cx), int(cy)), color,
+                    markerType=cv2.MARKER_CROSS, markerSize=10, thickness=2,
+                )
+                containment = candidate["containment"]
+                label = (
+                    f"{candidate['class_name']} "
+                    f"{containment:.2f}" if containment is not None
+                    else f"{candidate['class_name']} (claimed)"
+                )
+                cv2.putText(
+                    frame, label, (int(cx) + 6, int(cy) - 6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1,
+                )
+
+
 def _draw_detections(frame, detections):
     """
     Draw bounding boxes on frame (must be a writable copy — caller's responsibility).
@@ -47,6 +116,11 @@ def _draw_detections(frame, detections):
 def create_app(config: dict, shared_state, event_store):
     app = Flask(__name__)
 
+    # Calibration/diagnostic flag — see config.yaml's decision_engine
+    # section and core/decision_engine.py's module docstring. Read once
+    # at construction (config does not change at runtime), not per-frame.
+    debug_overlay_enabled = bool(config["decision_engine"].get("debug_overlay", False))
+
     def _generate_frames():
         while True:
             frame = shared_state.get_frame()
@@ -60,6 +134,9 @@ def create_app(config: dict, shared_state, event_store):
             # acceptable at Level 1 (see _draw_detections docstring).
             detections = shared_state.get_latest_detections()
             _draw_detections(frame, detections)
+
+            if debug_overlay_enabled:
+                _draw_debug_overlay(frame, shared_state.get_latest_debug_info())
 
             ok, buffer = cv2.imencode(".jpg", frame)
             if not ok:

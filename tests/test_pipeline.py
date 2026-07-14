@@ -30,7 +30,8 @@ from core.session_controller import SessionController, SessionState
 
 BASE_CONFIG = {"session": {"evaluating_frame_count": 15,
                             "decision_hold_seconds": 5.0,
-                            "cooldown_seconds": 3.0}}
+                            "cooldown_seconds": 3.0},
+               "decision_engine": {"debug": False}}
 
 _FAKE_FRAME = np.zeros((480, 640, 3), dtype=np.uint8)
 _FAKE_DETECTIONS = []
@@ -85,7 +86,7 @@ class TestCallOrder:
 
         call_order = []
         detector.detect.side_effect = lambda f: (call_order.append("detect") or event.set() or _FAKE_DETECTIONS)
-        de.evaluate.side_effect = lambda d: (call_order.append("evaluate") or _FAKE_VERDICT)
+        de.evaluate.side_effect = lambda d, **kw: (call_order.append("evaluate") or _FAKE_VERDICT)
         sc.update.side_effect = lambda v: (call_order.append("update") or _FAKE_SESSION_STATE)
 
         pipeline.start()
@@ -124,13 +125,13 @@ class TestCallOrder:
         event.wait(timeout=2)
         pipeline.stop()
 
-        de.evaluate.assert_called_with(fake_dets)
+        de.evaluate.assert_called_with(fake_dets, debug=False)
 
     def test_update_receives_verdict_from_evaluate(self):
         fake_verdict = FrameVerdict(status=ComplianceStatus.COMPLIANT, person_count=1)
         event = threading.Event()
         shared_state, detector, de, sc = make_stubs(event)
-        de.evaluate.side_effect = lambda d: (event.set() or fake_verdict)
+        de.evaluate.side_effect = lambda d, **kw: (event.set() or fake_verdict)
         pipeline = make_pipeline(shared_state, detector, de, sc)
 
         pipeline.start()
@@ -435,7 +436,8 @@ class TestIdentityInvalidation:
 
     _SC_CONFIG = {"session": {"evaluating_frame_count": 3,
                                "decision_hold_seconds": 10.0,
-                               "cooldown_seconds": 3.0}}
+                               "cooldown_seconds": 3.0},
+                  "decision_engine": {"debug": False}}
 
     @staticmethod
     def _make_fr_stub(two_results: list):

@@ -48,8 +48,27 @@ voice:
 # on typical human body proportions, not measurements from real camera
 # footage — like face.match_threshold above, they require tuning once
 # real deployment footage from the mounted camera is available.
+# debug / debug_overlay: calibration/diagnostic tools ONLY. Both default
+# false and should be switched on temporarily while tuning the ratios
+# below against real camera footage, then switched off again — neither
+# is meant to run during normal/demo operation.
+#   debug: DecisionEngine logs every (person, ppe_item) candidate pair it
+#     considers at DEBUG level (specific rejection reasons, per-person
+#     and per-frame summaries) and populates FrameVerdict.debug_info —
+#     see the "Debug diagnostic mode" section of core/decision_engine.py's
+#     module docstring. The pipeline runs the decision engine at
+#     inference rate (~170fps observed) — leaving this on will flood
+#     the log.
+#   debug_overlay: dashboard/app.py draws the same diagnostic geometry
+#     (person/region boxes, PPE centroids, containment scores, pass/fail
+#     colouring) onto the MJPEG stream — see _draw_debug_overlay() in
+#     dashboard/app.py. Adds per-frame drawing overhead; only useful
+#     while debug is also true (there is no debug_info to draw
+#     otherwise).
 decision_engine:
   containment_threshold: 0.60
+  debug: false
+  debug_overlay: false
   head:
     top_ratio: 0.25
     width_ratio: 0.55

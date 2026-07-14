@@ -13,6 +13,11 @@ class SharedState:
         self._session_state = None  # SessionState enum value, or None before first update
         self._fps = 0.0             # pipeline inference throughput (not camera capture FPS)
         self._worker_name: str = "unknown"  # last identified worker, or "unknown"
+        # FrameVerdict.debug_info from the most recent evaluate() call, or
+        # None. Only ever non-None when decision_engine.debug is enabled —
+        # see core/decision_engine.py. Used exclusively by the dashboard's
+        # diagnostic overlay (dashboard/app.py _draw_debug_overlay).
+        self._latest_debug_info = None
 
     # --- frame ---
 
@@ -73,3 +78,13 @@ class SharedState:
     def get_worker_name(self) -> str:
         with self._lock:
             return self._worker_name
+
+    # --- latest_debug_info (decision_engine diagnostic overlay) ---
+
+    def set_latest_debug_info(self, debug_info) -> None:
+        with self._lock:
+            self._latest_debug_info = debug_info
+
+    def get_latest_debug_info(self):
+        with self._lock:
+            return self._latest_debug_info

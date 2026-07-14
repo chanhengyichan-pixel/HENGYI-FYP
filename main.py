@@ -47,7 +47,7 @@ def run_dashboard(config: dict) -> None:
 
     camera = CameraCapture(config, shared_state)
     detector = Detector(config)
-    decision_engine = DecisionEngine()
+    decision_engine = DecisionEngine(config)
     session_controller = SessionController(config)
     face_recognizer = FaceRecognizer(config, worker_store)
     alert_manager = AlertManager([

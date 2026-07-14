@@ -38,6 +38,26 @@ voice:
   granted_sound: "assets/audio/granted.wav"
   denied_sound:  "assets/audio/denied.wav"
 
+# Per-person, geometry-aware PPE evaluation (core/decision_engine.py).
+# containment_threshold: minimum fraction of a PPE box's area that must
+# fall inside a person's box for that PPE item to be considered theirs.
+# head/torso ratios define the expected body region (as a fraction of the
+# person's own box) where a helmet/vest centroid must land to count as
+# correctly worn, rather than merely present somewhere in the frame.
+# CALIBRATION NOTE: these ratios are reasonable starting estimates based
+# on typical human body proportions, not measurements from real camera
+# footage — like face.match_threshold above, they require tuning once
+# real deployment footage from the mounted camera is available.
+decision_engine:
+  containment_threshold: 0.60
+  head:
+    top_ratio: 0.25
+    width_ratio: 0.55
+  torso:
+    top_ratio: 0.25
+    bottom_ratio: 0.75
+    width_ratio: 0.80
+
 # evaluating_frame_count should be odd — eliminates majority-vote ties.
 # Ties are also handled explicitly as DENIED (fail-safe), but an odd
 # count makes the outcome unambiguous without needing that fallback.

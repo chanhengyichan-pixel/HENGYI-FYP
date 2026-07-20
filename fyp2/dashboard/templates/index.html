@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PPE Monitor</title>
+  <style>
+    :root {
+      --bg:           #0f1419;
+      --bg-card:      #161d27;
+      --bg-header:    #111820;
+      --border:       #1e2d3d;
+      --border-soft:  #253344;
+      --cyan:         #00b4d8;
+      --cyan-dim:     #005f73;
+      --cyan-faint:   #001a22;
+      --green:        #22c55e;
+      --green-bg:     #052010;
+      --green-border: #166534;
+      --red:          #ef4444;
+      --red-bg:       #1f0505;
+      --red-border:   #7f1d1d;
+      --amber:        #f59e0b;
+      --text:         #cbd5e1;
+      --text-dim:     #64748b;
+      --text-muted:   #334155;
+      --radius:       8px;
+      --header-h:     52px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, "Segoe UI", "Inter", sans-serif;
+      font-size: 14px;
+    }
+
+    /* ── Header ── */
+    #header {
+      height: var(--header-h);
+      background: var(--bg-header);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      flex-shrink: 0;
+    }
+
+    #header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Accent stripe on the left edge */
+    #header-stripe {
+      width: 3px;
+      height: 24px;
+      background: var(--cyan);
+      border-radius: 2px;
+    }
+
+    #header-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    #header-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      font-family: "Courier New", monospace;
+    }
+
+    #header-right .h-val { color: var(--text); }
+
+    /* ── Page layout ── */
+    #main {
+      display: flex;
+      height: calc(100vh - var(--header-h));
+      gap: 12px;
+      padding: 12px;
+    }
+
+    /* ── Left: camera (62%) ── */
+    #left-col {
+      flex: 0 0 62%;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    #camera-header {
+      flex-shrink: 0;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-header);
+    }
+
+    #live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 6px var(--red);
+      flex-shrink: 0;
+      animation: blink 1.4s ease-in-out infinite;
+    }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    #camera-lbl {
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    #camera-img-wrap {
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+    }
+
+    #camera-img-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    /* ── Right: sidebar (38%) ── */
+    #sidebar {
+      flex: 1 1 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    /* Generic card */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .card-hdr {
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      padding: 7px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-header);
+    }
+
+    /* ── Session state card ── */
+    #session-card {
+      flex-shrink: 0;
+      border-left: 3px solid var(--cyan);
+      transition: border-color 0.3s, background 0.3s;
+    }
+
+    #session-body {
+      padding: 16px 16px 14px;
+      transition: background 0.3s;
+    }
+
+    #session-state-val {
+      font-size: 2.4rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      line-height: 1;
+      color: var(--cyan);
+      transition: color 0.3s, text-shadow 0.3s;
+    }
+
+    #session-sub {
+      font-size: 0.82rem;
+      color: var(--text-dim);
+      margin-top: 7px;
+      letter-spacing: 0.04em;
+      min-height: 1.2em;
+    }
+
+    /* GRANTED */
+    #session-card.state-granted {
+      border-left-color: var(--green);
+      background: var(--green-bg);
+    }
+    #session-card.state-granted #session-state-val {
+      color: var(--green);
+      text-shadow: 0 0 16px #22c55e55;
+    }
+    #session-card.state-granted #session-sub { color: #166534; }
+
+    /* DENIED */
+    #session-card.state-denied {
+      border-left-color: var(--red);
+      background: var(--red-bg);
+    }
+    #session-card.state-denied #session-state-val {
+      color: var(--red);
+      text-shadow: 0 0 16px #ef444455;
+    }
+    #session-card.state-denied #session-sub { color: #7f1d1d; }
+
+    /* EVALUATING */
+    #session-card.state-evaluating { border-left-color: var(--amber); }
+    #session-card.state-evaluating #session-state-val { color: var(--amber); }
+
+    /* COOLDOWN */
+    #session-card.state-cooldown { border-left-color: var(--text-muted); }
+    #session-card.state-cooldown #session-state-val { color: var(--text-muted); }
+
+    /* ── Stat row ── */
+    #stat-row {
+      flex-shrink: 0;
+      display: flex;
+      gap: 10px;
+    }
+
+    .stat-card {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+    }
+
+    .stat-lbl {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+
+    .stat-val {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--text);
+      font-family: "Courier New", monospace;
+    }
+
+    /* ── PPE status card ── */
+    #ppe-card { flex-shrink: 0; }
+
+    .ppe-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .ppe-row:last-child { border-bottom: none; }
+
+    .ppe-name {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .ppe-badge {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      padding: 2px 10px;
+      border-radius: 999px;
+    }
+
+    .ppe-ok   { background: #052010; color: var(--green); border: 1px solid var(--green-border); }
+    .ppe-bad  { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+    .ppe-none { background: #1a2332; color: var(--text-muted); border: 1px solid var(--border); }
+
+    /* ── Detections card ── */
+    #det-card { flex-shrink: 0; }
+
+    #det-list {
+      list-style: none;
+      padding: 8px 14px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    #det-list li {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 0.92rem;
+    }
+
+    .dc-name        { color: var(--text); font-weight: 500; }
+    .dc-helmet .dc-name,
+    .dc-vest   .dc-name { color: var(--green); }
+    .dc-no-helmet .dc-name,
+    .dc-no-vest   .dc-name { color: var(--red); }
+    .dc-person .dc-name { color: var(--cyan); }
+
+    .dc-conf {
+      font-family: "Courier New", monospace;
+      font-size: 0.82rem;
+      color: var(--text-dim);
+    }
+
+    .det-empty {
+      color: var(--text-muted);
+      font-size: 0.88rem;
+      font-style: italic;
+    }
+
+    /* ── Events card (fills remaining space) ── */
+    #events-card {
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #events-scroll {
+      flex: 1 1 0;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) var(--bg-card);
+    }
+
+    table { border-collapse: collapse; width: 100%; }
+
+    thead tr { position: sticky; top: 0; z-index: 1; background: var(--bg-header); }
+
+    th {
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      padding: 7px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      font-size: 0.88rem;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-dim);
+      vertical-align: top;
+    }
+
+    td:nth-child(1) { font-family: "Courier New", monospace; font-size: 0.82rem; }
+
+    tbody tr.ev-granted td              { color: var(--text-dim); }
+    tbody tr.ev-granted td:nth-child(2) { color: var(--green); font-weight: 600; }
+    tbody tr.ev-denied  td              { color: var(--text-muted); }
+    tbody tr.ev-denied  td:nth-child(2) { color: var(--red); font-weight: 600; }
+
+    .no-events td { color: var(--text-muted); font-style: italic; }
+
+    /* ── Responsive ── */
+    @media (max-width: 860px) {
+      html, body { overflow: auto; }
+      #main { flex-direction: column; height: auto; }
+      #left-col { flex: none; height: 56vw; }
+      #sidebar { flex: none; overflow: visible; }
+      #events-card { flex: none; min-height: 200px; }
+      #events-scroll { overflow-y: visible; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div id="header">
+    <div id="header-left">
+      <div id="header-stripe"></div>
+      <div id="header-title">Edge AI PPE Compliance Monitor</div>
+    </div>
+    <div id="header-right">
+      SYS&nbsp;<span class="h-val" id="h-cam">—</span>
+      &nbsp;|&nbsp;
+      FPS&nbsp;<span class="h-val" id="h-fps">—</span>
+      &nbsp;|&nbsp;
+      <span class="h-val" id="h-clock">—</span>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div id="main">
+
+    <!-- Camera -->
+    <div id="left-col">
+      <div id="camera-header">
+        <div id="live-dot"></div>
+        <span id="camera-lbl">Live Camera Feed</span>
+      </div>
+      <div id="camera-img-wrap">
+        <img src="/video_feed" alt="Camera feed">
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div id="sidebar">
+
+      <!-- Session state -->
+      <div id="session-card" class="card">
+        <div class="card-hdr">Session State</div>
+        <div id="session-body">
+          <div id="session-state-val">IDLE</div>
+          <div id="session-sub">Awaiting personnel</div>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div id="stat-row">
+        <div class="stat-card">
+          <div class="stat-lbl">Camera</div>
+          <div class="stat-val" id="s-cam">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-lbl">Pipeline FPS</div>
+          <div class="stat-val" id="s-fps">—</div>
+        </div>
+      </div>
+
+      <!-- PPE status -->
+      <div id="ppe-card" class="card">
+        <div class="card-hdr">PPE Status</div>
+        <div class="ppe-row">
+          <span class="ppe-name">Helmet</span>
+          <span id="ppe-helmet" class="ppe-badge ppe-none">—</span>
+        </div>
+        <div class="ppe-row">
+          <span class="ppe-name">Vest</span>
+          <span id="ppe-vest" class="ppe-badge ppe-none">—</span>
+        </div>
+      </div>
+
+      <!-- Live detections -->
+      <div id="det-card" class="card">
+        <div class="card-hdr">Live Detections</div>
+        <ul id="det-list">
+          <li><span class="det-empty">No detections</span></li>
+        </ul>
+      </div>
+
+      <!-- Event history -->
+      <div id="events-card" class="card">
+        <div class="card-hdr">Event History</div>
+        <div id="events-scroll">
+          <table>
+            <thead>
+              <tr><th>Time</th><th>Worker</th><th>Decision</th><th>Violations</th></tr>
+            </thead>
+            <tbody id="events">
+              <tr class="no-events"><td colspan="4">No events yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- sidebar -->
+  </div><!-- main -->
+
+  <script>
+    const SESSION_SUB = {
+      granted:         "Access granted",
+      denied:          "Access denied",
+      evaluating:      "Collecting frames...",
+      person_detected: "Person detected",
+      cooldown:        "Cooldown in progress",
+      idle:            "Awaiting personnel",
+      unknown:         "",
+    };
+
+    const DET_CLS = {
+      helmet:      "dc-helmet",
+      vest:        "dc-vest",
+      "no-helmet": "dc-no-helmet",
+      "no-vest":   "dc-no-vest",
+      person:      "dc-person",
+    };
+
+    function ppeStatus(dets, pos, neg) {
+      const names = dets.map(d => d.class_name);
+      if (names.includes(pos)) return { cls: "ppe-ok",  txt: "DETECTED ✓" };
+      if (names.includes(neg)) return { cls: "ppe-bad", txt: "MISSING ✗" };
+      return { cls: "ppe-none", txt: "—" };
+    }
+
+    function tick() {
+      const now  = new Date();
+      const time = now.toLocaleTimeString();
+      const date = now.toLocaleDateString(undefined, { weekday:"short", month:"short", day:"numeric" });
+      document.getElementById("h-clock").textContent = time + "  " + date;
+    }
+
+    function updateStatus() {
+      tick();
+      fetch("/api/status")
+        .then(r => r.json())
+        .then(data => {
+          const state = data.session_state || "unknown";
+
+          document.getElementById("h-cam").textContent = data.camera_status;
+          document.getElementById("h-fps").textContent = data.fps + " fps";
+
+          // Session card
+          const card = document.getElementById("session-card");
+          card.className = "card state-" + state;
+          document.getElementById("session-state-val").textContent =
+            state.replace("_", " ").toUpperCase();
+          document.getElementById("session-sub").textContent =
+            SESSION_SUB[state] ?? "";
+
+          // Stats
+          document.getElementById("s-cam").textContent = data.camera_status;
+          document.getElementById("s-fps").textContent = data.fps + " fps";
+
+          // PPE badges
+          const dets   = data.detections || [];
+          const helmet = ppeStatus(dets, "helmet", "no-helmet");
+          const vest   = ppeStatus(dets, "vest",   "no-vest");
+          const hEl = document.getElementById("ppe-helmet");
+          const vEl = document.getElementById("ppe-vest");
+          hEl.className = "ppe-badge " + helmet.cls; hEl.textContent = helmet.txt;
+          vEl.className = "ppe-badge " + vest.cls;   vEl.textContent = vest.txt;
+
+          // Detections
+          const detList = document.getElementById("det-list");
+          if (!dets.length) {
+            detList.innerHTML = '<li><span class="det-empty">No detections</span></li>';
+          } else {
+            detList.innerHTML = dets.map(d => {
+              const cls = DET_CLS[d.class_name] || "";
+              return `<li class="${cls}">
+                <span class="dc-name">${d.class_name}</span>
+                <span class="dc-conf">${d.confidence.toFixed(2)}</span>
+              </li>`;
+            }).join("");
+          }
+
+          // Events
+          const tbody = document.getElementById("events");
+          if (!data.recent_events.length) {
+            tbody.innerHTML = '<tr class="no-events"><td colspan="4">No events yet</td></tr>';
+            return;
+          }
+          tbody.innerHTML = data.recent_events.map(e => {
+            const cls    = e.verdict === "granted" ? "ev-granted" : "ev-denied";
+            const viol   = e.violations.length ? e.violations.join(", ") : "—";
+            const worker = e.worker_name || "unknown";
+            return `<tr class="${cls}">
+              <td>${e.timestamp.slice(11)}</td>
+              <td>${worker}</td>
+              <td>${e.verdict.toUpperCase()}</td>
+              <td>${viol}</td>
+            </tr>`;
+          }).join("");
+        })
+        .catch(() => {
+          document.getElementById("session-state-val").textContent = "OFFLINE";
+        });
+    }
+
+    updateStatus();
+    setInterval(updateStatus, 1000);
+  </script>
+</body>
+</html>

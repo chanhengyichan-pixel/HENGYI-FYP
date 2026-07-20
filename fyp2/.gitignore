@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+
+# Model weights
+*.pt
+*.onnx
+
+# Output files (keep .gitkeep)
+output/logs/*
+output/screenshots/*
+!output/logs/.gitkeep
+!output/screenshots/.gitkeep
+
+# Runtime databases and captured images (created on device, not committed)
+output/*.db
+output/*.jpg
+
+# Trained face recognition model (enrolled on device per deployment)
+models/face_recognizer.yml
+
+# Scratch / temporary scripts
+test_config.py
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store

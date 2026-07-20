@@ -1,0 +1,86 @@
+# --- Camera Settings ---
+# source: webcam index (0 = default laptop webcam) or a video file path
+# width/height: capture resolution in pixels
+camera:
+  source: 0
+  width: 640
+  height: 480
+  max_failed_reads: 10
+
+dashboard:
+  host: "0.0.0.0"
+  port: 5000
+
+detector:
+  weights: "models/exp01_roboflow/weights/best.pt"
+  confidence_threshold: 0.5
+
+alerts:
+  screenshot_dir: "output/screenshots"
+
+storage:
+  db_path: "output/events.db"
+
+workers:
+  db_path: "output/workers.db"
+
+# match_threshold is a MAXIMUM LBPH distance (lower distance = better match).
+# This is the opposite convention from Detector.confidence_threshold —
+# see core/face_recognizer.py docstring for the full explanation.
+# 75.0 is a reasonable starting point; real-world tuning against enrolled
+# workers is a known required calibration step before deployment.
+face:
+  model_path: "models/face_recognizer.yml"
+  match_threshold: 75.0
+
+# Placeholder WAV files — replace with real recorded reminders before deployment.
+voice:
+  granted_sound: "assets/audio/granted.wav"
+  denied_sound:  "assets/audio/denied.wav"
+
+# Per-person, geometry-aware PPE evaluation (core/decision_engine.py).
+# containment_threshold: minimum fraction of a PPE box's area that must
+# fall inside a person's box for that PPE item to be considered theirs.
+# head/torso ratios define the expected body region (as a fraction of the
+# person's own box) where a helmet/vest centroid must land to count as
+# correctly worn, rather than merely present somewhere in the frame.
+# CALIBRATION NOTE: these ratios are reasonable starting estimates based
+# on typical human body proportions, not measurements from real camera
+# footage — like face.match_threshold above, they require tuning once
+# real deployment footage from the mounted camera is available.
+# debug / debug_overlay: calibration/diagnostic tools ONLY. Both default
+# false and should be switched on temporarily while tuning the ratios
+# below against real camera footage, then switched off again — neither
+# is meant to run during normal/demo operation.
+#   debug: DecisionEngine logs every (person, ppe_item) candidate pair it
+#     considers at DEBUG level (specific rejection reasons, per-person
+#     and per-frame summaries) and populates FrameVerdict.debug_info —
+#     see the "Debug diagnostic mode" section of core/decision_engine.py's
+#     module docstring. The pipeline runs the decision engine at
+#     inference rate (~170fps observed) — leaving this on will flood
+#     the log.
+#   debug_overlay: dashboard/app.py draws the same diagnostic geometry
+#     (person/region boxes, PPE centroids, containment scores, pass/fail
+#     colouring) onto the MJPEG stream — see _draw_debug_overlay() in
+#     dashboard/app.py. Adds per-frame drawing overhead; only useful
+#     while debug is also true (there is no debug_info to draw
+#     otherwise).
+decision_engine:
+  containment_threshold: 0.60
+  debug: true
+  debug_overlay: true
+  head:
+    top_ratio: 0.25
+    width_ratio: 0.55
+  torso:
+    top_ratio: 0.25
+    bottom_ratio: 0.75
+    width_ratio: 0.80
+
+# evaluating_frame_count should be odd — eliminates majority-vote ties.
+# Ties are also handled explicitly as DENIED (fail-safe), but an odd
+# count makes the outcome unambiguous without needing that fallback.
+session:
+  evaluating_frame_count: 15
+  decision_hold_seconds: 5.0
+  cooldown_seconds: 3.0

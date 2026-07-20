@@ -19,14 +19,6 @@ from storage.event_store import EventStore
 from storage.worker_store import WorkerStore
 from dashboard.app import create_app
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(Path("output/logs/app.log"), encoding="utf-8"),
-    ],
-)
 logger = logging.getLogger(__name__)
 
 
@@ -168,4 +160,36 @@ def _menu(config: dict) -> None:
 
 if __name__ == "__main__":
     config = load_config()
+
+    # Guaranteed-visible confirmation of what was actually loaded from
+    # disk, with zero guessing about the running process's config state.
+    # Emitted via a minimal temporary basicConfig (root logger has no
+    # handlers yet at this point — a bare logger.info() call here would
+    # silently hit logging's WARNING-level "handler of last resort" and
+    # never be seen). The real basicConfig below (force=True) replaces
+    # this temporary configuration with the final level/handlers.
+    logging.basicConfig(level=logging.INFO)
+    logger.info(
+        "Config loaded — decision_engine.debug=%s, debug_overlay=%s",
+        config.get("decision_engine", {}).get("debug"),
+        config.get("decision_engine", {}).get("debug_overlay"),
+    )
+
+    # Root log level is tied to decision_engine.debug: DEBUG-level
+    # diagnostic logs from DecisionEngine (see core/decision_engine.py's
+    # "Debug diagnostic mode") are filtered out at the root logger
+    # regardless of that flag unless the root level is itself raised to
+    # DEBUG. This must run after load_config() (moved from module import
+    # time) so the flag can actually be read.
+    debug_enabled = config.get("decision_engine", {}).get("debug", False)
+    logging.basicConfig(
+        level=logging.DEBUG if debug_enabled else logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler(Path("output/logs/app.log"), encoding="utf-8"),
+        ],
+        force=True,
+    )
+
     _menu(config)

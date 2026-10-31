@@ -69,6 +69,28 @@ class WorkerStore:
             self._conn.commit()
         return next_id
 
+    def name_exists(self, name: str) -> bool:
+        """Return True if a worker with this name is already registered.
+
+        Deliberately CASE-INSENSITIVE: "Alice" and "alice" are treated as
+        the same worker. This is a deliberate choice, not an oversight —
+        LBPH has no notion of "same person, differently-cased name"; a
+        case-sensitive check would let a typo'd re-registration (e.g.
+        "alice" vs "Alice") silently create a second label for the same
+        physical person, splitting their training data across two
+        label_ids and degrading recognition for both. Called by main.py's
+        CLI menu before enrollment starts, so this rejection happens
+        immediately after the name is entered — not after a full
+        multi-pose capture session.
+        """
+        with self._lock:
+            if self._conn is None:
+                return False
+            row = self._conn.execute(
+                "SELECT 1 FROM workers WHERE LOWER(name) = LOWER(?) LIMIT 1", (name,)
+            ).fetchone()
+        return row is not None
+
     def get_name(self, label_id: int) -> str | None:
         """Return the worker name for a given label_id, or None if not found."""
         with self._lock:

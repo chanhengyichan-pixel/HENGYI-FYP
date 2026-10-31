@@ -110,9 +110,14 @@ def _menu(config: dict) -> None:
       Stopping the dashboard is shutting down the whole access-control system;
       we do not loop back to the menu afterward.
 
-    Choice 2 — Register Worker: prompts for a name, calls enroll_worker(),
-      prints a clear success/failure line, then loops back.  Enrolling
-      multiple workers in one sitting is an expected workflow.
+    Choice 2 — Register Worker: prompts for a name, rejects it immediately
+      (case-insensitively, via WorkerStore.name_exists()) if a worker by
+      that name is already registered — re-prompting rather than letting
+      the user go through a full multi-pose enrollment capture only to
+      be rejected at the end — then calls enroll_worker(), prints a clear
+      success/failure line, and loops back.  Enrolling multiple workers
+      in one sitting is an expected workflow.  A blank name cancels back
+      to the main menu.
 
     Choice 3 — Exit: exits immediately.
 
@@ -141,15 +146,33 @@ def _menu(config: dict) -> None:
             sys.exit(0)
 
         elif choice == "2":
-            name = input("Worker name: ").strip()
-            if not name:
-                print("Name cannot be empty.")
-                continue
-            success = enroll_worker(name, config)
-            if success:
-                print(f"\nEnrollment successful: '{name}' is now registered.")
-            else:
-                print(f"\nEnrollment failed for '{name}'. See errors above.")
+            while True:
+                name = input("Worker name (leave blank to cancel): ").strip()
+                if not name:
+                    print("Registration cancelled.")
+                    break
+
+                # Fail fast on a duplicate name BEFORE opening the webcam —
+                # checked here, not inside enroll_worker(), so a duplicate
+                # is caught before the user goes through a full multi-pose
+                # capture session only to be rejected at the end.
+                worker_store = WorkerStore(config)
+                try:
+                    already_registered = worker_store.name_exists(name)
+                finally:
+                    worker_store.close()
+
+                if already_registered:
+                    print(f"A worker named '{name}' is already registered — "
+                          "please enter a different name.")
+                    continue
+
+                success = enroll_worker(name, config)
+                if success:
+                    print(f"\nEnrollment successful: '{name}' is now registered.")
+                else:
+                    print(f"\nEnrollment failed for '{name}'. See errors above.")
+                break
 
         elif choice == "3":
             sys.exit(0)

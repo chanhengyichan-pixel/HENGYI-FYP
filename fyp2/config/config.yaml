@@ -67,8 +67,8 @@ voice:
 #     otherwise).
 decision_engine:
   containment_threshold: 0.60
-  debug: true
-  debug_overlay: true
+  debug: false
+  debug_overlay: false
   head:
     top_ratio: 0.25
     width_ratio: 0.55
@@ -76,6 +76,67 @@ decision_engine:
     top_ratio: 0.25
     bottom_ratio: 0.75
     width_ratio: 0.80
+
+# Browser-guided worker enrollment (scripts/enrollment_server.py).
+# num_samples: total LBPH training samples captured per worker — MUST
+#   equal the sum of every pose_stages[].samples below; validated at
+#   startup (validate_pose_stages()) and fails fast with a clear error
+#   if they don't add up, before the webcam is ever opened.
+# capture_cooldown_seconds: minimum interval between captures, even while
+#   guidance continuously passes — spreads samples across natural
+#   micro-movement instead of capturing near-identical frames back to back.
+# min_face_area_ratio / max_face_area_ratio: acceptable face-box area as a
+#   fraction of frame area — governs the "move closer" / "move back" checks.
+# center_tolerance_ratio: how far the face box's centroid may drift from
+#   the frame center (as a fraction of half-width/half-height) before
+#   "move to the center of the frame" is shown.
+# brightness_threshold: minimum mean pixel intensity (0-255) of the face
+#   ROI before lighting is flagged as too dark.
+# session_timeout_seconds: abort the session if no new sample is captured
+#   within this many seconds (stalled enrollment, e.g. nobody in frame).
+# CALIBRATION NOTE: area/center/brightness thresholds are reasonable
+# starting estimates, not measurements from real camera footage — same
+# calibration caveat as decision_engine's head/torso ratios above.
+#
+# pose_stages: ordered capture stages for LBPH training diversity. All
+#   samples across every stage train/update the SAME label — this is a
+#   capture-diversity technique, not separate identities. Each stage:
+#     name        - machine key (not displayed)
+#     label       - short human-readable stage name (progress display,
+#                   e.g. "Stage 2/4: Slight Left — 3/5")
+#     instruction - full on-frame directive shown once guidance checks
+#                   pass for this stage (replaces the generic "Hold
+#                   still" message)
+#     samples     - samples to capture in this stage before advancing
+#   Poses are intentionally "slight" — the frontal Haar cascade already
+#   in use (haarcascade_frontalface_default) reliably detects small
+#   head turns/tilts but is not a profile-face detector; a second
+#   cascade was deliberately NOT added for this.
+enrollment:
+  num_samples: 20
+  capture_cooldown_seconds: 0.2
+  min_face_area_ratio: 0.05
+  max_face_area_ratio: 0.35
+  center_tolerance_ratio: 0.35
+  brightness_threshold: 60
+  session_timeout_seconds: 120
+  pose_stages:
+    - name: center
+      label: "Center"
+      instruction: "Look straight ahead and hold still"
+      samples: 5
+    - name: slight_left
+      label: "Slight Left"
+      instruction: "Turn slightly LEFT and hold still"
+      samples: 5
+    - name: slight_right
+      label: "Slight Right"
+      instruction: "Turn slightly RIGHT and hold still"
+      samples: 5
+    - name: slight_down
+      label: "Slight Down"
+      instruction: "Tilt your head slightly DOWN and hold still"
+      samples: 5
 
 # evaluating_frame_count should be odd — eliminates majority-vote ties.
 # Ties are also handled explicitly as DENIED (fail-safe), but an odd

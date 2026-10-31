@@ -124,6 +124,33 @@ class TestClose:
 
 
 # ---------------------------------------------------------------------------
+# name_exists — case-insensitive duplicate check
+# ---------------------------------------------------------------------------
+
+class TestNameExists:
+    def test_exact_match_returns_true(self, tmp_path):
+        store = make_store(tmp_path)
+        store.add_worker("Alice")
+        assert store.name_exists("Alice") is True
+
+    def test_different_case_match_returns_true(self, tmp_path):
+        store = make_store(tmp_path)
+        store.add_worker("Alice")
+        assert store.name_exists("alice") is True
+        assert store.name_exists("ALICE") is True
+        assert store.name_exists("aLiCe") is True
+
+    def test_different_name_returns_false(self, tmp_path):
+        store = make_store(tmp_path)
+        store.add_worker("Alice")
+        assert store.name_exists("Bob") is False
+
+    def test_empty_store_returns_false(self, tmp_path):
+        store = make_store(tmp_path)
+        assert store.name_exists("Alice") is False
+
+
+# ---------------------------------------------------------------------------
 # Config fail-fast
 # ---------------------------------------------------------------------------
 

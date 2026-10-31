@@ -167,6 +167,7 @@ def prepare_chvg() -> str:
         for ext in (".jpg", ".jpeg", ".png"):
             img = xml.with_suffix(ext)
             if img.exists():
+                
                 pairs.append((img, xml))
                 break
 

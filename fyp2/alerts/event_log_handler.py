@@ -1,6 +1,6 @@
 """
 EventLogHandler — records GRANTED/DENIED decision events to the
-in-memory EventStore.
+SQLite-backed EventStore.
 
 Implemented as a BaseHandler so it slots into the AlertManager
 dispatcher alongside ScreenshotHandler and VoiceHandler.  "Record this

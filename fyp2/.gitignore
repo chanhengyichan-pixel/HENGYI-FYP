@@ -21,8 +21,9 @@ output/screenshots/*
 output/*.db
 output/*.jpg
 
-# Trained face recognition model (enrolled on device per deployment)
-models/face_recognizer.yml
+# NCNN exports (regenerate on the Pi) and recorded test videos
+*_ncnn_model/
+videos/
 
 # Scratch / temporary scripts
 test_config.py

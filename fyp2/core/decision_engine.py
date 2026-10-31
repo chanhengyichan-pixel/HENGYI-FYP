@@ -96,12 +96,47 @@ Additive field: person_results
 -------------------------------
 FrameVerdict gains `person_results: list[dict]`, defaulting to an empty
 list. Each entry is
-  {"person_index": int, "helmet_ok": bool, "vest_ok": bool,
-   "violations": list[str]}
-in the same order as the confidence-sorted persons list. This exists for
-future per-person dashboard/dissertation presentation; nothing existing
-reads it and SessionController only ever reads `.status`, so this is a
-purely additive change to the public contract.
+  {"person_index": int, "box": (x1, y1, x2, y2), "helmet_ok": bool,
+   "vest_ok": bool, "violations": list[str],
+   "helmet_box": (x1, y1, x2, y2) | None, "vest_box": (x1, y1, x2, y2) | None}
+helmet_box / vest_box are the accepted PPE boxes (None when not ok); the
+pose wear check (core/pose_wear_check.py) compares them with body
+keypoints.
+in the same order as the confidence-sorted persons list. ZoneMonitor
+(core/zone_monitor.py) uses `box` to match each result back to a tracked
+person detection, so it knows which person in a hazard zone is missing
+PPE. SessionController only ever reads `.status`.
+
+Wear check — "worn", not just "present"
+---------------------------------------
+Containment + centroid region alone accept a vest that is HELD in front
+of the body, or a helmet held next to the head: the box is in the right
+place. When decision_engine.wear_check.enabled is true, a positive item
+("helmet", "vest") must also have the shape of a worn item, relative to
+the person's own box:
+
+  helmet  top edge close to the top of the person box
+            (a worn helmet is the highest part of the person; one held
+             beside the head sits lower than the head top)
+            (helmet.y1 - person.y1) / person_h <= helmet_max_top_gap
+          width at least helmet_min_width_ratio of the person width
+  vest    width at least vest_min_width_ratio of the person width
+            (a vest held in one hand or folded is narrow)
+          horizontally centred: |vest_cx - person_cx| / person_w
+            <= vest_max_center_offset (a held vest hangs to one side)
+          top edge in the upper body:
+            (vest.y1 - person.y1) / person_h <= vest_max_top_ratio
+            (a vest dangling from a hand starts around the waist)
+          height at least vest_min_height_ratio of the person height
+
+A positive item failing any rule is simply not a candidate — the person
+then has no helmet/vest assigned and fails safe as a violation, exactly
+like a missing item. Negative classes (no-helmet, no-vest) are not shape
+checked. If the wear_check section is missing, the check is off.
+
+Known limit: a vest held flat against the chest, or a helmet held on top
+of the head, still has the shape of a worn item and passes. Catching that
+needs body keypoints (pose model) or a trained "improperly worn" class.
 
 Configuration
 -------------
@@ -120,13 +155,12 @@ shape, under config["decision_engine"]:
       width_ratio: 0.80
 
 Fails fast (KeyError) on any missing key, consistent with every other
-config-driven module in this project (Detector, FaceRecognizer,
-SessionController).
+config-driven module in this project (Detector,
+SessionController, ZoneMonitor).
 
 CALIBRATION NOTE: the head/torso ratios above are reasonable starting
 points based on typical human body proportions, not measurements from
-real camera footage. Like face.match_threshold (see
-core/face_recognizer.py), these values require calibration once real
+real camera footage. These values require calibration once real
 deployment footage is available — camera angle, mounting height, and
 lens distortion all affect where PPE actually appears relative to a
 person's bounding box.
@@ -265,6 +299,10 @@ _HELMET_CLASSES = ("helmet", "no-helmet")
 _VEST_CLASSES = ("vest", "no-vest")
 
 
+def _box(d) -> tuple[float, float, float, float]:
+    return (d.x1, d.y1, d.x2, d.y2)
+
+
 def _box_area(d) -> float:
     return max(0.0, d.x2 - d.x1) * max(0.0, d.y2 - d.y1)
 
@@ -304,7 +342,7 @@ class DecisionEngine:
         config : full project config dict; reads config["decision_engine"].
 
         Fails fast (KeyError) on any missing key — same convention as
-        Detector, FaceRecognizer, and SessionController.
+        Detector and SessionController.
         """
         de_cfg = config["decision_engine"]
         self._containment_threshold = float(de_cfg["containment_threshold"])
@@ -312,6 +350,16 @@ class DecisionEngine:
         head_cfg = de_cfg["head"]
         self._head_top_ratio = float(head_cfg["top_ratio"])
         self._head_width_ratio = float(head_cfg["width_ratio"])
+
+        wear = de_cfg.get("wear_check") or {}
+        self._wear_check = bool(wear.get("enabled", False))
+        if self._wear_check:
+            self._helmet_max_top_gap = float(wear["helmet_max_top_gap"])
+            self._helmet_min_width_ratio = float(wear["helmet_min_width_ratio"])
+            self._vest_min_width_ratio = float(wear["vest_min_width_ratio"])
+            self._vest_max_center_offset = float(wear["vest_max_center_offset"])
+            self._vest_max_top_ratio = float(wear["vest_max_top_ratio"])
+            self._vest_min_height_ratio = float(wear["vest_min_height_ratio"])
 
         torso_cfg = de_cfg["torso"]
         self._torso_top_ratio = float(torso_cfg["top_ratio"])
@@ -362,17 +410,19 @@ class DecisionEngine:
         total_vests_assigned = 0
 
         for idx, person in enumerate(persons):
-            helmet_label, ppe_pool, helmet_debug = self._claim(
+            helmet_item, ppe_pool, helmet_debug = self._claim(
                 idx, person, ppe_pool, _HELMET_CLASSES,
                 "head", self._head_region_bounds, self._is_head_region_valid,
                 debug, all_ppe_items, claim_history,
             )
-            vest_label, ppe_pool, vest_debug = self._claim(
+            vest_item, ppe_pool, vest_debug = self._claim(
                 idx, person, ppe_pool, _VEST_CLASSES,
                 "torso", self._torso_region_bounds, self._is_torso_region_valid,
                 debug, all_ppe_items, claim_history,
             )
 
+            helmet_label = helmet_item.class_name if helmet_item is not None else None
+            vest_label = vest_item.class_name if vest_item is not None else None
             violations = []
             helmet_ok = helmet_label == "helmet"
             if helmet_ok:
@@ -388,9 +438,12 @@ class DecisionEngine:
 
             person_results.append({
                 "person_index": idx,
+                "box": (person.x1, person.y1, person.x2, person.y2),
                 "helmet_ok": helmet_ok,
                 "vest_ok": vest_ok,
                 "violations": violations,
+                "helmet_box": _box(helmet_item) if helmet_ok else None,
+                "vest_box": _box(vest_item) if vest_ok else None,
             })
             all_violations.extend(violations)
 
@@ -449,7 +502,7 @@ class DecisionEngine:
                bounds_fn, region_validator, debug, all_ppe_items, claim_history):
         """Find the best candidate in `pool` for `person` among `classes`.
 
-        Returns (class_name_or_None, new_pool, debug_entry_or_None) where
+        Returns (claimed_item_or_None, new_pool, debug_entry_or_None) where
         new_pool has the claimed item removed (claim-and-remove: once
         assigned, an item is no longer available to any other person).
         debug_entry is only built when debug=True; see the module
@@ -509,7 +562,9 @@ class DecisionEngine:
             containment_ok = score >= self._containment_threshold
             # Actual decision — unchanged regardless of `debug`.
             region_ok = region_validator(item, person)
-            is_candidate = containment_ok and region_ok
+            wear_reasons = self._wear_reasons(item, person)
+            wear_ok = not wear_reasons
+            is_candidate = containment_ok and region_ok and wear_ok
 
             if debug:
                 cx, cy = _centroid(item)
@@ -535,6 +590,7 @@ class DecisionEngine:
                         f"centroid Y outside {region_name} region "
                         f"(cy={cy:.1f}, valid=[{y_lo:.1f},{y_hi:.1f}])"
                     )
+                reasons.extend(f"not worn: {r}" for r in wear_reasons)
 
                 logger.debug(
                     "claim-check person[%d] box=(%s,%s,%s,%s) conf=%.4f | "
@@ -560,6 +616,7 @@ class DecisionEngine:
                     "x_ok": x_ok,
                     "y_ok": y_ok,
                     "region_ok": region_ok,
+                    "wear_ok": wear_ok,
                     "claimed_by": None,
                     # "status"/"reasons" for the currently-best candidate are
                     # corrected to "assigned"/[] below, once known.
@@ -607,7 +664,42 @@ class DecisionEngine:
             {"assigned": best_item.class_name, "candidates": debug_candidates}
             if debug else None
         )
-        return best_item.class_name, new_pool, debug_entry
+        return best_item, new_pool, debug_entry
+
+    def _wear_reasons(self, item, person) -> list[str]:
+        """Shape rules for a WORN helmet/vest (see module docstring).
+        Returns the failed rules as readable strings; empty = looks worn."""
+        if not self._wear_check or item.class_name not in ("helmet", "vest"):
+            return []
+        pw = max(1.0, person.x2 - person.x1)
+        ph = max(1.0, person.y2 - person.y1)
+        iw = item.x2 - item.x1
+        ih = item.y2 - item.y1
+        reasons = []
+        if item.class_name == "helmet":
+            top_gap = (item.y1 - person.y1) / ph
+            if top_gap > self._helmet_max_top_gap:
+                reasons.append(f"helmet top below head top "
+                               f"({top_gap:.2f} > {self._helmet_max_top_gap:.2f})")
+            if iw / pw < self._helmet_min_width_ratio:
+                reasons.append(f"helmet too narrow "
+                               f"({iw / pw:.2f} < {self._helmet_min_width_ratio:.2f})")
+        else:
+            if iw / pw < self._vest_min_width_ratio:
+                reasons.append(f"vest too narrow "
+                               f"({iw / pw:.2f} < {self._vest_min_width_ratio:.2f})")
+            offset = abs((item.x1 + item.x2) / 2.0 - (person.x1 + person.x2) / 2.0) / pw
+            if offset > self._vest_max_center_offset:
+                reasons.append(f"vest off-centre "
+                               f"({offset:.2f} > {self._vest_max_center_offset:.2f})")
+            top = (item.y1 - person.y1) / ph
+            if top > self._vest_max_top_ratio:
+                reasons.append(f"vest starts too low "
+                               f"({top:.2f} > {self._vest_max_top_ratio:.2f})")
+            if ih / ph < self._vest_min_height_ratio:
+                reasons.append(f"vest too short "
+                               f"({ih / ph:.2f} < {self._vest_min_height_ratio:.2f})")
+        return reasons
 
     def _head_region_bounds(self, person) -> tuple[float, float, float, float]:
         """Return (y_lo, y_hi, x_lo, x_hi) head-region bounds for `person`."""

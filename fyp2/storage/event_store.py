@@ -1,53 +1,44 @@
 """
-SQLite-backed event store for GRANTED/DENIED decision events.
+SQLite-backed event store for entrance decisions and room zone events.
+
+Event types
+-----------
+  ENTRY_GRANTED     entrance, severity info
+  ENTRY_DENIED      entrance, severity warning
+  HAZARD_PPE        room, missing PPE inside a hazard zone, severity high
+  RESTRICTED_ENTRY  room, anyone inside a restricted zone, severity critical
+
+No personal data is stored — no names, no face data.
 
 Retention policy
 ----------------
 Every event is stored permanently — no cap, no deletion.  get_recent(n)
 returns only the last n events for dashboard display; this is a display
-limit, not a retention limit.  The full history persists for future use
-(Milestone 13: violation statistics, worker history, reporting).
+limit, not a retention limit.
 
 Thread-safety
 -------------
 A single sqlite3 connection is opened for the lifetime of the EventStore,
 with check_same_thread=False, and ALL access goes through a single
-threading.Lock().  This matches the lock-protected-single-resource pattern
-already established in SharedState and the original in-memory EventStore.
+threading.Lock().  Both the entrance and the room pipeline threads write
+through EventLogHandler, and Flask reads from its own threads; the lock is
+the authoritative guard.  Writes are infrequent (decisions and zone
+events, not frames), so contention is not a concern.
 
-Why a single locked connection rather than per-call connections or a pool:
-- Event writes occur only on GRANTED/DENIED decisions, which are
-  infrequent relative to the pipeline's frame rate.  Lock contention is
-  not a real concern.
-- A single connection avoids the overhead of opening and closing a
-  connection on every append() or get_recent() call.
-- check_same_thread=False alone is not sufficient: SQLite's C library
-  serialises writes internally but the Python sqlite3 module adds its own
-  thread checks on top.  The Lock() is the authoritative guard; the flag
-  just suppresses the module's own check so the connection object can be
-  passed between threads.
+Schema and migration
+--------------------
+CREATE TABLE IF NOT EXISTS creates the table on a fresh deployment
+(including the Pi) with zero manual setup.
 
-Schema
-------
-CREATE TABLE IF NOT EXISTS ensures a fresh deployment (including the Pi)
-creates the database file and schema automatically — zero manual setup.
-
-Schema migration — worker_name column
---------------------------------------
-worker_name TEXT was added after the initial schema (Milestone 12).
-CREATE TABLE IF NOT EXISTS does NOT add new columns to existing databases,
-so an explicit ALTER TABLE migration is run after the CREATE statement.
-The migration is idempotent: sqlite3.OperationalError ("duplicate column
-name") is caught and ignored.  This is safe against three cases:
-  1. Fresh database — CREATE TABLE adds the column; ALTER TABLE is a no-op
-     that raises the error (caught and ignored).  Actually: fresh DB, CREATE
-     makes the table including the new column from the _CREATE_TABLE
-     definition, so ALTER TABLE raises immediately — handled.
-  2. Already-migrated database — ALTER TABLE raises "duplicate column name"
-     (caught and ignored).
-  3. Pre-migration database (Milestone 11/13 data without worker_name) —
-     ALTER TABLE adds the column; existing rows will have NULL for
-     worker_name, which get_recent()/get_all_events() coerce to "unknown".
+Databases created by the earlier version of the project have only
+(timestamp, verdict, violations, worker_name). The columns event_type,
+camera, zone, severity and snapshot are added with idempotent ALTER TABLE
+statements (sqlite3.OperationalError "duplicate column name" is caught
+and ignored on a fresh or already-migrated database). Old rows have NULL
+event_type/camera; reads derive them from `verdict` (granted ->
+ENTRY_GRANTED, denied -> ENTRY_DENIED, camera 'entrance'), so old history
+still shows correctly. The legacy worker_name column is left in place in
+old databases but is no longer written or read.
 """
 
 import json
@@ -61,58 +52,100 @@ CREATE TABLE IF NOT EXISTS events (
     timestamp   TEXT    NOT NULL,
     verdict     TEXT    NOT NULL,
     violations  TEXT    NOT NULL,
-    worker_name TEXT
+    event_type  TEXT,
+    camera      TEXT,
+    zone        TEXT,
+    severity    TEXT,
+    snapshot    TEXT
 )
 """
 
-# Idempotent migration: add worker_name to databases created before this
-# column existed.  OperationalError is raised if the column is already
-# present (fresh DB or already-migrated DB) — silently ignored in both cases.
-_ADD_WORKER_NAME_COLUMN = "ALTER TABLE events ADD COLUMN worker_name TEXT"
+_MIGRATIONS = [
+    "ALTER TABLE events ADD COLUMN event_type TEXT",
+    "ALTER TABLE events ADD COLUMN camera TEXT",
+    "ALTER TABLE events ADD COLUMN zone TEXT",
+    "ALTER TABLE events ADD COLUMN severity TEXT",
+    "ALTER TABLE events ADD COLUMN snapshot TEXT",
+]
 
 _INSERT = """
-INSERT INTO events (timestamp, verdict, violations, worker_name)
-VALUES (?, ?, ?, ?)
+INSERT INTO events (timestamp, verdict, violations, event_type, camera,
+                    zone, severity, snapshot)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 """
 
-# NULL worker_name (rows from before the migration) is coerced to "unknown"
-# at read time via COALESCE so callers always receive a string, never None.
-_SELECT_RECENT = """
-SELECT timestamp, verdict, violations, COALESCE(worker_name, 'unknown')
+# Event type with a fallback for rows written before the event_type column.
+_EVENT_TYPE_EXPR = """COALESCE(event_type, CASE verdict
+    WHEN 'granted' THEN 'ENTRY_GRANTED'
+    WHEN 'denied'  THEN 'ENTRY_DENIED'
+    ELSE 'UNKNOWN' END)"""
+
+_COLUMNS = f"""timestamp, verdict, violations, {_EVENT_TYPE_EXPR},
+    COALESCE(camera, 'entrance'), zone, severity, snapshot"""
+
+_SELECT_RECENT = f"""
+SELECT {_COLUMNS}
 FROM events
 ORDER BY timestamp DESC, id DESC
 LIMIT ?
 """
 
 # Fetches limit+1 rows so the caller can detect whether a next page exists
-# without a separate COUNT query.  The extra row is never returned to the
-# caller — it is trimmed after the has_more flag is set.
-_SELECT_ALL_PAGINATED = """
-SELECT timestamp, verdict, violations, COALESCE(worker_name, 'unknown')
+# without a separate COUNT query.  The extra row is trimmed after the
+# has_more flag is set.  The optional event_type filter is applied to the
+# derived type, so old rows filter correctly too.
+_SELECT_PAGE = f"""
+SELECT {_COLUMNS}
 FROM events
+WHERE (? IS NULL OR {_EVENT_TYPE_EXPR} = ?)
 ORDER BY timestamp DESC, id DESC
 LIMIT ? OFFSET ?
 """
 
-# Counts granted/denied totals in a single pass.
-_SELECT_TOTALS = """
+_SELECT_TOTALS = f"""
 SELECT
-    COUNT(*)                                    AS total,
-    SUM(CASE WHEN verdict = 'granted' THEN 1 ELSE 0 END) AS granted,
-    SUM(CASE WHEN verdict = 'denied'  THEN 1 ELSE 0 END) AS denied
+    COUNT(*),
+    SUM(CASE WHEN {_EVENT_TYPE_EXPR} = 'ENTRY_GRANTED'    THEN 1 ELSE 0 END),
+    SUM(CASE WHEN {_EVENT_TYPE_EXPR} = 'ENTRY_DENIED'     THEN 1 ELSE 0 END),
+    SUM(CASE WHEN {_EVENT_TYPE_EXPR} = 'HAZARD_PPE'       THEN 1 ELSE 0 END),
+    SUM(CASE WHEN {_EVENT_TYPE_EXPR} = 'RESTRICTED_ENTRY' THEN 1 ELSE 0 END)
 FROM events
 """
 
 # json_each() unnests the JSON array stored in the violations column so
 # SQLite can aggregate individual violation strings without pulling all
-# rows into Python.  Available since SQLite 3.38 (this project's bundled
-# version is 3.45.1, verified at development time).
+# rows into Python (SQLite >= 3.38).
 _SELECT_VIOLATION_COUNTS = """
 SELECT j.value AS violation, COUNT(*) AS cnt
 FROM events, json_each(events.violations) AS j
 GROUP BY j.value
 ORDER BY cnt DESC
 """
+
+_SELECT_ZONE_COUNTS = """
+SELECT zone, COUNT(*) AS cnt
+FROM events
+WHERE zone IS NOT NULL
+GROUP BY zone
+ORDER BY cnt DESC
+"""
+
+_EMPTY_STATS = {"total_events": 0, "granted_count": 0, "denied_count": 0,
+                "hazard_count": 0, "restricted_count": 0,
+                "violation_counts": {}, "zone_counts": {}}
+
+
+def _row_to_event(row) -> dict:
+    return {
+        "timestamp":  row[0],
+        "verdict":    row[1],
+        "violations": json.loads(row[2]),
+        "event_type": row[3],
+        "camera":     row[4],
+        "zone":       row[5],
+        "severity":   row[6],
+        "snapshot":   row[7],
+    }
 
 
 class EventStore:
@@ -121,14 +154,19 @@ class EventStore:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute(_CREATE_TABLE)
-        try:
-            self._conn.execute(_ADD_WORKER_NAME_COLUMN)
-        except sqlite3.OperationalError:
-            pass  # column already exists — fresh DB or already migrated
+        for stmt in _MIGRATIONS:
+            try:
+                self._conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass  # column already exists — fresh DB or already migrated
         self._conn.commit()
 
     def append(self, event: dict) -> None:
-        """Persist a new event.  Events are never deleted."""
+        """Persist a new event.  Events are never deleted.
+
+        Required keys: timestamp, verdict, violations. Optional: event_type,
+        camera, zone, severity, snapshot (None when omitted).
+        """
         violations_json = json.dumps(event["violations"])
         with self._lock:
             if self._conn is None:
@@ -137,94 +175,56 @@ class EventStore:
                 event["timestamp"],
                 event["verdict"],
                 violations_json,
-                event.get("worker_name"),  # None if caller omitted it
+                event.get("event_type"),
+                event.get("camera"),
+                event.get("zone"),
+                event.get("severity"),
+                event.get("snapshot"),
             ))
             self._conn.commit()
 
     def get_stats(self) -> dict:
         """Return aggregate statistics computed entirely in SQL.
 
-        Returns a dict with keys:
-          total_events (int), granted_count (int), denied_count (int),
-          violation_counts (dict[str, int]) — each violation string mapped
-          to the number of events that contained it.
-
-        Violation unnesting uses SQLite's json_each() table-valued function
-        (available since SQLite 3.38; verified against the project's bundled
-        3.45.1).  This avoids pulling every row into Python just to count
-        strings — the aggregation happens entirely in the database engine.
-        A Python-side fallback was considered but not implemented: it would
-        silently give wrong results if json_each() were absent rather than
-        failing visibly, and the SQLite version floor is well within the
-        range of every supported Python 3.12 distribution.
+        Keys: total_events, granted_count, denied_count, hazard_count,
+        restricted_count (ints), violation_counts (violation -> number of
+        events containing it), zone_counts (zone name -> events in it).
         """
         with self._lock:
             if self._conn is None:
-                return {"total_events": 0, "granted_count": 0,
-                        "denied_count": 0, "violation_counts": {}}
+                return {k: (dict(v) if isinstance(v, dict) else v)
+                        for k, v in _EMPTY_STATS.items()}
             row = self._conn.execute(_SELECT_TOTALS).fetchone()
-            total, granted, denied = row[0], row[1] or 0, row[2] or 0
             viol_rows = self._conn.execute(_SELECT_VIOLATION_COUNTS).fetchall()
-        violation_counts = {r[0]: r[1] for r in viol_rows}
+            zone_rows = self._conn.execute(_SELECT_ZONE_COUNTS).fetchall()
         return {
-            "total_events":    total,
-            "granted_count":   granted,
-            "denied_count":    denied,
-            "violation_counts": violation_counts,
+            "total_events":     row[0],
+            "granted_count":    row[1] or 0,
+            "denied_count":     row[2] or 0,
+            "hazard_count":     row[3] or 0,
+            "restricted_count": row[4] or 0,
+            "violation_counts": {r[0]: r[1] for r in viol_rows},
+            "zone_counts":      {r[0]: r[1] for r in zone_rows},
         }
 
-    def get_all_events(self, limit: int = 50, offset: int = 0) -> dict:
-        """Return a paginated slice of the full event history, newest first.
+    def get_all_events(self, limit: int = 50, offset: int = 0,
+                       event_type: str | None = None) -> dict:
+        """Return a paginated slice of the event history, newest first.
 
-        Uses SQL LIMIT/OFFSET — no Python-side slicing.  Callers use offset
-        to implement page navigation: page N starts at offset (N-1)*limit.
-
-        Probes limit+1 rows to determine has_more without a separate COUNT
-        query.  The probe row is trimmed before returning; only `limit` rows
-        (or fewer) appear in the result.  This correctly handles the boundary
-        case where total events is an exact multiple of limit — the last full
-        page returns has_more=False rather than True.
-
-        Returns a dict: {"events": list[dict], "has_more": bool}
-
-        Date-range filtering would be a natural extension of this method
-        (add optional start/end timestamp parameters and a WHERE clause)
-        but is out of scope for Milestone 13.
+        event_type optionally restricts the result to one type (e.g.
+        "HAZARD_PPE"). Returns {"events": list[dict], "has_more": bool}.
         """
         with self._lock:
             if self._conn is None:
                 return {"events": [], "has_more": False}
-            cursor = self._conn.execute(_SELECT_ALL_PAGINATED, (limit + 1, offset))
-            rows = cursor.fetchall()
+            rows = self._conn.execute(
+                _SELECT_PAGE, (event_type, event_type, limit + 1, offset)
+            ).fetchall()
         has_more = len(rows) > limit
-        rows = rows[:limit]
         return {
-            "events": [
-                {
-                    "timestamp":   row[0],
-                    "verdict":     row[1],
-                    "violations":  json.loads(row[2]),
-                    "worker_name": row[3],
-                }
-                for row in rows
-            ],
+            "events": [_row_to_event(r) for r in rows[:limit]],
             "has_more": has_more,
         }
-
-    def close(self) -> None:
-        """Close the SQLite connection cleanly.
-
-        Commits any pending state (a no-op in practice — every append()
-        commits immediately) then closes the connection.  Safe to call
-        more than once: subsequent calls are silently ignored, matching
-        the defensive pattern of CameraCapture.stop().
-        """
-        with self._lock:
-            if self._conn is None:
-                return
-            self._conn.commit()
-            self._conn.close()
-            self._conn = None
 
     def get_recent(self, n: int = 10) -> list[dict]:
         """Return up to n most recent events, newest first.
@@ -235,14 +235,14 @@ class EventStore:
         with self._lock:
             if self._conn is None:
                 return []
-            cursor = self._conn.execute(_SELECT_RECENT, (n,))
-            rows = cursor.fetchall()
-        return [
-            {
-                "timestamp":   row[0],
-                "verdict":     row[1],
-                "violations":  json.loads(row[2]),
-                "worker_name": row[3],
-            }
-            for row in rows
-        ]
+            rows = self._conn.execute(_SELECT_RECENT, (n,)).fetchall()
+        return [_row_to_event(r) for r in rows]
+
+    def close(self) -> None:
+        """Close the SQLite connection cleanly.  Safe to call more than once."""
+        with self._lock:
+            if self._conn is None:
+                return
+            self._conn.commit()
+            self._conn.close()
+            self._conn = None

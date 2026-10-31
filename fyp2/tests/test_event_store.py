@@ -16,19 +16,36 @@ def make_config(tmp_path):
     return {"storage": {"db_path": str(tmp_path / "events.db")}}
 
 
-def make_event(verdict, ts="2026-07-09 07:00:00", violations=None,
-               worker_name="unknown"):
-    """Build a complete event dict including worker_name.
+_ENTRANCE_TYPE = {"granted": ("ENTRY_GRANTED", "info"),
+                  "denied":  ("ENTRY_DENIED", "warning")}
 
-    worker_name defaults to "unknown" to match what EventStore returns for
-    rows stored without an explicit name (NULL is coerced to "unknown" by
-    COALESCE in the SELECT queries).
-    """
+
+def make_event(verdict, ts="2026-07-09 07:00:00", violations=None):
+    """Build a complete entrance event dict in the shape EventStore returns."""
+    event_type, severity = _ENTRANCE_TYPE[verdict]
     return {
-        "timestamp":   ts,
-        "verdict":     verdict,
-        "violations":  violations or [],
-        "worker_name": worker_name,
+        "timestamp":  ts,
+        "verdict":    verdict,
+        "violations": violations or [],
+        "event_type": event_type,
+        "camera":     "entrance",
+        "zone":       None,
+        "severity":   severity,
+        "snapshot":   None,
+    }
+
+
+def make_zone_event(event_type, ts="2026-07-09 07:00:00", zone="Machine area",
+                    violations=None, snapshot=None):
+    return {
+        "timestamp":  ts,
+        "verdict":    "violation",
+        "violations": violations or [],
+        "event_type": event_type,
+        "camera":     "room",
+        "zone":       zone,
+        "severity":   "high" if event_type == "HAZARD_PPE" else "critical",
+        "snapshot":   snapshot,
     }
 
 
@@ -194,6 +211,8 @@ class TestGetStats:
         assert stats["total_events"]    == 0
         assert stats["granted_count"]   == 0
         assert stats["denied_count"]    == 0
+        assert stats["hazard_count"]    == 0
+        assert stats["restricted_count"] == 0
         assert stats["violation_counts"] == {}
 
     def test_totals_match_appended_events(self, tmp_path):
@@ -327,71 +346,83 @@ class TestGetAllEvents:
 # worker_name — storage and retrieval
 # ---------------------------------------------------------------------------
 
-class TestWorkerName:
-    def test_worker_name_persists_through_append_and_get_recent(self, tmp_path):
+class TestZoneEvents:
+    def test_zone_event_round_trips(self, tmp_path):
         store = EventStore(make_config(tmp_path))
-        store.append(make_event("granted", worker_name="Alice"))
-        result = store.get_recent(1)
-        assert result[0]["worker_name"] == "Alice"
+        e = make_zone_event("HAZARD_PPE", violations=["no-helmet"],
+                            snapshot="output/screenshots/x.jpg")
+        store.append(e)
+        assert store.get_recent(1) == [e]
 
-    def test_worker_name_persists_through_get_all_events(self, tmp_path):
+    def test_stats_count_each_event_type(self, tmp_path):
         store = EventStore(make_config(tmp_path))
-        store.append(make_event("denied", worker_name="Bob"))
-        events = store.get_all_events(limit=10, offset=0)["events"]
-        assert events[0]["worker_name"] == "Bob"
+        store.append(make_event("granted"))
+        store.append(make_event("denied", violations=["no-vest"]))
+        store.append(make_zone_event("HAZARD_PPE", violations=["no-helmet"]))
+        store.append(make_zone_event("RESTRICTED_ENTRY", zone="Server cabinet"))
+        store.append(make_zone_event("RESTRICTED_ENTRY", zone="Server cabinet"))
+        stats = store.get_stats()
+        assert stats["total_events"] == 5
+        assert stats["granted_count"] == 1
+        assert stats["denied_count"] == 1
+        assert stats["hazard_count"] == 1
+        assert stats["restricted_count"] == 2
+        assert stats["zone_counts"] == {"Server cabinet": 2, "Machine area": 1}
+        assert stats["violation_counts"] == {"no-vest": 1, "no-helmet": 1}
 
-    def test_none_worker_name_stored_and_read_back_as_unknown(self, tmp_path):
-        """append() with worker_name=None stores NULL; reads back as 'unknown'."""
+    def test_get_all_events_filters_by_type(self, tmp_path):
         store = EventStore(make_config(tmp_path))
-        event = {"timestamp": "2026-07-09 07:00:00", "verdict": "granted",
-                 "violations": [], "worker_name": None}
-        store.append(event)
-        result = store.get_recent(1)
-        assert result[0]["worker_name"] == "unknown"
+        store.append(make_event("granted", ts="2026-07-09 07:00:01"))
+        store.append(make_zone_event("RESTRICTED_ENTRY", ts="2026-07-09 07:00:02"))
+        store.append(make_event("denied", ts="2026-07-09 07:00:03"))
+        result = store.get_all_events(limit=10, offset=0, event_type="RESTRICTED_ENTRY")
+        assert [e["event_type"] for e in result["events"]] == ["RESTRICTED_ENTRY"]
+        assert result["has_more"] is False
 
-    def test_missing_worker_name_key_stored_as_unknown(self, tmp_path):
-        """append() with no worker_name key also stores NULL → reads as 'unknown'."""
-        store = EventStore(make_config(tmp_path))
-        event = {"timestamp": "2026-07-09 07:00:00", "verdict": "denied",
-                 "violations": ["no-helmet"]}
-        store.append(event)
-        result = store.get_recent(1)
-        assert result[0]["worker_name"] == "unknown"
 
-    def test_pre_migration_row_null_coerced_to_unknown(self, tmp_path):
-        """Simulates a pre-migration database row (no worker_name column value).
+class TestLegacyDatabase:
+    """A database created by the earlier version (with worker_name, without
+    event_type/camera/...) must open, migrate, and read back correctly."""
 
-        Manually inserts a row with worker_name = NULL — as would appear in a
-        database created before the Milestone 12 schema migration — then reads
-        it back via EventStore to confirm COALESCE returns 'unknown'.
-        """
-        config = make_config(tmp_path)
-        db_path = config["storage"]["db_path"]
-
-        # Create the table with the worker_name column (migration already
-        # runs in __init__), then insert a row with explicit NULL.
-        store = EventStore(config)
-        conn = sqlite3.connect(db_path)
-        conn.execute(
-            "INSERT INTO events (timestamp, verdict, violations, worker_name) "
-            "VALUES (?, ?, ?, NULL)",
-            ("2026-07-09 07:00:00", "granted", "[]"),
-        )
+    def _make_legacy_db(self, path):
+        conn = sqlite3.connect(path)
+        conn.execute("""CREATE TABLE events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL, verdict TEXT NOT NULL,
+            violations TEXT NOT NULL, worker_name TEXT)""")
+        conn.execute("INSERT INTO events (timestamp, verdict, violations, worker_name) "
+                     "VALUES ('2026-07-09 07:00:00', 'granted', '[]', 'Alice')")
+        conn.execute("INSERT INTO events (timestamp, verdict, violations, worker_name) "
+                     "VALUES ('2026-07-09 07:00:01', 'denied', '[\"no-helmet\"]', NULL)")
         conn.commit()
         conn.close()
 
-        result = store.get_recent(1)
-        assert result[0]["worker_name"] == "unknown"
+    def test_old_rows_get_derived_event_type_and_camera(self, tmp_path):
+        config = make_config(tmp_path)
+        self._make_legacy_db(config["storage"]["db_path"])
+        store = EventStore(config)
+        recent = store.get_recent(2)
+        assert recent[0]["event_type"] == "ENTRY_DENIED"
+        assert recent[1]["event_type"] == "ENTRY_GRANTED"
+        assert all(e["camera"] == "entrance" for e in recent)
+        assert "worker_name" not in recent[0]
 
-    def test_multiple_workers_stored_independently(self, tmp_path):
-        store = EventStore(make_config(tmp_path))
-        store.append(make_event("granted", ts="2026-07-09 07:00:01",
-                                worker_name="Alice"))
-        store.append(make_event("denied",  ts="2026-07-09 07:00:02",
-                                worker_name="Bob"))
-        result = store.get_recent(2)
-        assert result[0]["worker_name"] == "Bob"    # newest first
-        assert result[1]["worker_name"] == "Alice"
+    def test_new_events_append_after_migration(self, tmp_path):
+        config = make_config(tmp_path)
+        self._make_legacy_db(config["storage"]["db_path"])
+        store = EventStore(config)
+        store.append(make_zone_event("HAZARD_PPE", ts="2026-07-09 07:00:02"))
+        stats = store.get_stats()
+        assert stats["total_events"] == 3
+        assert stats["hazard_count"] == 1
+        assert stats["granted_count"] == 1
+
+    def test_filter_matches_old_rows(self, tmp_path):
+        config = make_config(tmp_path)
+        self._make_legacy_db(config["storage"]["db_path"])
+        store = EventStore(config)
+        result = store.get_all_events(limit=10, offset=0, event_type="ENTRY_GRANTED")
+        assert len(result["events"]) == 1
 
 
 # ---------------------------------------------------------------------------

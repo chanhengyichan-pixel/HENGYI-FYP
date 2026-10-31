@@ -7,6 +7,10 @@ and decision_engine.
 
 Clock injection: tests pass a list-backed fake clock whose current value
 is faked_clock[0].  Tests advance time by mutating faked_clock[0].
+
+Most tests use evaluating_seconds=0 with min_votes=5, so the window closes
+after exactly 5 votes without moving the clock — that keeps the hold and
+cooldown timing tests simple. TestTimeWindow covers the time-based window.
 """
 
 import pytest
@@ -19,7 +23,8 @@ from core.session_controller import SessionController, SessionState
 
 BASE_CONFIG = {
     "session": {
-        "evaluating_frame_count": 5,   # small for test speed
+        "evaluating_seconds": 0.0,     # window closes on min_votes alone
+        "min_votes": 5,
         "decision_hold_seconds": 10.0,
         "cooldown_seconds": 3.0,
     }
@@ -97,14 +102,14 @@ class TestEvaluating:
     def test_stays_evaluating_before_window_full(self):
         ctrl, _ = make_controller()
         ctrl.update(COMPLIANT)   # PERSON_DETECTED
-        # evaluating_frame_count=5; send 4 frames — still evaluating
+        # min_votes=5; send 4 frames — still evaluating
         state = feed(ctrl, COMPLIANT, 4)
         assert state is SessionState.EVALUATING
 
     def test_full_window_exits_evaluating(self):
         ctrl, _ = make_controller()
         ctrl.update(COMPLIANT)   # PERSON_DETECTED
-        # 5 frames completes the window (evaluating_frame_count=5)
+        # 5 frames completes the window (min_votes=5)
         state = feed(ctrl, COMPLIANT, 5)
         assert state is not SessionState.EVALUATING
 
@@ -181,8 +186,8 @@ class TestMajorityVote:
         assert ctrl.state is SessionState.DENIED
 
     def test_tie_is_denied(self):
-        # evaluating_frame_count=4 (even) forces a tie scenario
-        config = {"session": {"evaluating_frame_count": 4,
+        # min_votes=4 (even) forces a tie scenario
+        config = {"session": {"evaluating_seconds": 0.0, "min_votes": 4,
                                "decision_hold_seconds": 5.0,
                                "cooldown_seconds": 3.0}}
         ctrl, _ = make_controller(config)
@@ -287,10 +292,8 @@ class TestSessionIdentityLimitation:
         # signal, so it cannot detect the handoff and continues the in-progress
         # session, mixing A's votes with B's.
         #
-        # This test locks in the CURRENT behavior.  It is NOT asserting the
-        # desired long-term behavior (which would be a fresh session for B).
-        # Do not "fix" this test without implementing per-person identity in
-        # Milestone 12.
+        # This test locks in the CURRENT behavior, accepted by design for a
+        # one-person check point with no identity storage.
         ctrl, _ = make_controller()
 
         ctrl.update(NON_COMPLIANT)              # IDLE → PERSON_DETECTED (Worker A, no vote yet)
@@ -307,3 +310,110 @@ class TestSessionIdentityLimitation:
         # If identity were tracked properly, B's session should start fresh
         # and would eventually GRANT after 5 compliant frames.
         assert ctrl.state is SessionState.DENIED  # mixed A+B votes → wrong outcome for B
+
+
+# ---------------------------------------------------------------------------
+# Time-based evaluation window
+# ---------------------------------------------------------------------------
+
+TIME_CONFIG = {"session": {"evaluating_seconds": 1.5, "min_votes": 3,
+                           "decision_hold_seconds": 5.0, "cooldown_seconds": 3.0}}
+
+
+class TestTimeWindow:
+    def test_many_fast_frames_do_not_close_window_early(self):
+        # Laptop case: lots of frames inside 1.5 s must not decide early.
+        ctrl, clock = make_controller(TIME_CONFIG)
+        ctrl.update(COMPLIANT)                 # PERSON_DETECTED
+        for i in range(40):                    # 40 frames in 1.0 s
+            clock[0] = i * 0.025
+            ctrl.update(COMPLIANT)
+        assert ctrl.state is SessionState.EVALUATING
+
+    def test_window_closes_after_evaluating_seconds(self):
+        ctrl, clock = make_controller(TIME_CONFIG)
+        ctrl.update(COMPLIANT)                 # PERSON_DETECTED
+        for t in (0.0, 0.5, 1.0, 1.5):         # ~2 FPS, Pi-like
+            clock[0] = t
+            ctrl.update(COMPLIANT)
+        assert ctrl.state is SessionState.GRANTED
+
+    def test_slow_device_waits_for_min_votes(self):
+        # Very slow device: 1.5 s passed but only 2 votes — keep collecting.
+        ctrl, clock = make_controller(TIME_CONFIG)
+        ctrl.update(NON_COMPLIANT)             # PERSON_DETECTED
+        clock[0] = 0.0
+        ctrl.update(NON_COMPLIANT)             # vote 1, window starts
+        clock[0] = 2.0
+        ctrl.update(NON_COMPLIANT)             # vote 2 — time up, votes short
+        assert ctrl.state is SessionState.EVALUATING
+        clock[0] = 2.5
+        ctrl.update(NON_COMPLIANT)             # vote 3 — decide
+        assert ctrl.state is SessionState.DENIED
+
+    def test_window_restarts_after_person_leaves(self):
+        ctrl, clock = make_controller(TIME_CONFIG)
+        ctrl.update(COMPLIANT)
+        clock[0] = 0.0
+        ctrl.update(COMPLIANT)                 # window starts at 0.0
+        clock[0] = 1.0
+        ctrl.update(NO_PERSON)                 # abort → IDLE
+        clock[0] = 1.2
+        ctrl.update(COMPLIANT)                 # PERSON_DETECTED
+        ctrl.update(COMPLIANT)                 # new window starts at 1.2
+        clock[0] = 2.0
+        ctrl.update(COMPLIANT)
+        clock[0] = 2.2
+        ctrl.update(COMPLIANT)                 # 1.0 s into new window
+        assert ctrl.state is SessionState.EVALUATING
+
+
+# ---------------------------------------------------------------------------
+# decision_violations — what the voice prompt should name
+# ---------------------------------------------------------------------------
+
+def _nc(*violations):
+    return FrameVerdict(status=ComplianceStatus.NON_COMPLIANT,
+                        violations=list(violations), person_count=1)
+
+
+class TestDecisionViolations:
+    def test_only_helmet_missing_throughout(self):
+        ctrl, _ = make_controller()
+        ctrl.update(_nc("no-helmet"))
+        feed(ctrl, _nc("no-helmet"), 5)
+        assert ctrl.state is SessionState.DENIED
+        assert ctrl.decision_violations == ["no-helmet"]
+
+    def test_one_flickering_frame_does_not_add_a_violation(self):
+        # Vest worn; one frame misses it. Majority says only the helmet.
+        ctrl, _ = make_controller()
+        ctrl.update(_nc("no-helmet"))
+        for v in [_nc("no-helmet"), _nc("no-helmet", "no-vest"), _nc("no-helmet"),
+                  _nc("no-helmet"), _nc("no-helmet")]:
+            ctrl.update(v)
+        assert ctrl.decision_violations == ["no-helmet"]
+
+    def test_both_missing(self):
+        ctrl, _ = make_controller()
+        ctrl.update(_nc("no-helmet", "no-vest"))
+        feed(ctrl, _nc("no-helmet", "no-vest"), 5)
+        assert ctrl.decision_violations == ["no-helmet", "no-vest"]
+
+    def test_granted_has_no_violations(self):
+        ctrl, _ = make_controller()
+        ctrl.update(COMPLIANT)
+        feed(ctrl, COMPLIANT, 5)
+        assert ctrl.decision_violations == []
+
+    def test_counts_reset_between_sessions(self):
+        ctrl, clock = make_controller()
+        ctrl.update(_nc("no-vest"))
+        feed(ctrl, _nc("no-vest"), 5)                 # DENIED, no-vest
+        clock[0] = 10.0
+        ctrl.update(COMPLIANT)                        # → COOLDOWN
+        clock[0] = 13.1
+        ctrl.update(COMPLIANT)                        # → IDLE
+        ctrl.update(_nc("no-helmet"))                 # PERSON_DETECTED
+        feed(ctrl, _nc("no-helmet"), 5)
+        assert ctrl.decision_violations == ["no-helmet"]

@@ -396,3 +396,83 @@ class TestDebugDiagnostics:
         assert len(claimed_entries) == 1
         assert claimed_entries[0]["claimed_by"] == 0
         assert "already claimed by person 0" in claimed_entries[0]["reasons"][0]
+
+
+# ---------------------------------------------------------------------------
+# Wear check: PPE held in the hand / beside the head is not "worn"
+# Person box (100,100)-(300,500): width 200, height 400.
+# ---------------------------------------------------------------------------
+
+WEAR_CONFIG = {
+    "decision_engine": {
+        **CONFIG["decision_engine"],
+        "wear_check": {
+            "enabled": True,
+            "helmet_max_top_gap": 0.08,
+            "helmet_min_width_ratio": 0.15,
+            "vest_min_width_ratio": 0.45,
+            "vest_max_center_offset": 0.20,
+            "vest_max_top_ratio": 0.50,
+            "vest_min_height_ratio": 0.20,
+        },
+    }
+}
+
+_WORN_HELMET = (150, 100, 250, 190)
+_WORN_VEST = (130, 230, 270, 370)
+
+
+@pytest.fixture
+def wear_engine():
+    return DecisionEngine(WEAR_CONFIG)
+
+
+class TestWearCheck:
+    def test_worn_ppe_still_compliant(self, wear_engine):
+        v = wear_engine.evaluate([_person(), _det("helmet", *_WORN_HELMET),
+                                  _det("vest", *_WORN_VEST)])
+        assert v.status is ComplianceStatus.COMPLIANT
+
+    def test_narrow_offcentre_vest_in_hand_rejected(self, wear_engine):
+        # Centroid still inside the torso region, so only the wear check rejects.
+        dets = [_person(), _det("helmet", *_WORN_HELMET), _det("vest", 210, 250, 275, 400)]
+        assert DecisionEngine(CONFIG).evaluate(dets).status is ComplianceStatus.COMPLIANT
+        v = wear_engine.evaluate(dets)
+        assert v.status is not ComplianceStatus.COMPLIANT
+        assert "no-vest" in v.violations
+        assert "no-helmet" not in v.violations
+
+    def test_vest_hanging_low_rejected(self, wear_engine):
+        dets = [_person(), _det("helmet", *_WORN_HELMET), _det("vest", 130, 320, 270, 460)]
+        v = wear_engine.evaluate(dets)
+        assert "no-vest" in v.violations
+
+    def test_helmet_held_low_beside_head_rejected(self, wear_engine):
+        # Centroid (200,180) is in the head region, but the helmet top is
+        # 0.10 of person height below the head top -> held, not worn.
+        dets = [_person(), _det("helmet", 150, 140, 250, 220), _det("vest", *_WORN_VEST)]
+        assert DecisionEngine(CONFIG).evaluate(dets).status is ComplianceStatus.COMPLIANT
+        v = wear_engine.evaluate(dets)
+        assert "no-helmet" in v.violations
+        assert "no-vest" not in v.violations
+
+    def test_tiny_helmet_rejected(self, wear_engine):
+        dets = [_person(), _det("helmet", 190, 100, 215, 125), _det("vest", *_WORN_VEST)]
+        v = wear_engine.evaluate(dets)
+        assert "no-helmet" in v.violations
+
+    def test_debug_marks_not_worn(self, wear_engine):
+        dets = [_person(), _det("helmet", *_WORN_HELMET), _det("vest", 210, 250, 275, 400)]
+        v = wear_engine.evaluate(dets, debug=True)
+        vest_cands = v.debug_info["persons"][0]["vest"]["candidates"]
+        assert any(c["wear_ok"] is False for c in vest_cands)
+
+    def test_wear_check_off_when_section_missing(self, engine):
+        dets = [_person(), _det("helmet", 150, 140, 250, 220), _det("vest", *_WORN_VEST)]
+        assert engine.evaluate(dets).status is ComplianceStatus.COMPLIANT
+
+    def test_wear_check_disabled_flag(self):
+        cfg = {"decision_engine": {**CONFIG["decision_engine"],
+                                   "wear_check": {"enabled": False}}}
+        dets = [_person(), _det("helmet", 150, 140, 250, 220), _det("vest", *_WORN_VEST)]
+        assert DecisionEngine(cfg).evaluate(dets).status is ComplianceStatus.COMPLIANT

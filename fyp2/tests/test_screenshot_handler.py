@@ -36,74 +36,74 @@ def handler(tmp_path):
 class TestFiresOnce:
     def test_fires_on_granted_entry(self, handler):
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
-            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME, None)
+            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME)
         mock_write.assert_called_once()
 
     def test_fires_on_denied_entry(self, handler):
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
-            handler.handle(DENIED, NON_COMPLIANT_VERDICT, FAKE_FRAME, None)
+            handler.handle(DENIED, NON_COMPLIANT_VERDICT, FAKE_FRAME)
         mock_write.assert_called_once()
 
     def test_does_not_fire_again_on_second_granted_frame(self, handler):
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
-            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME, None)  # entry → fires
-            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME, None)  # same hold → debounce
+            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME)  # entry → fires
+            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME)  # same hold → debounce
         mock_write.assert_called_once()
 
     def test_does_not_fire_again_on_subsequent_denied_frames(self, handler):
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
             for _ in range(5):
-                handler.handle(DENIED, NON_COMPLIANT_VERDICT, FAKE_FRAME, None)
+                handler.handle(DENIED, NON_COMPLIANT_VERDICT, FAKE_FRAME)
         mock_write.assert_called_once()
 
 
 class TestDebounceReset:
     def test_fires_again_after_state_leaves_and_re_enters_granted(self, handler):
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
-            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME, None)   # fires (1)
-            handler.handle(COOLDOWN := SessionState.COOLDOWN, COMPLIANT_VERDICT, FAKE_FRAME, None)  # reset
-            handler.handle(IDLE, COMPLIANT_VERDICT, FAKE_FRAME, None)       # reset
-            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME, None)   # fires again (2)
+            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME)   # fires (1)
+            handler.handle(COOLDOWN := SessionState.COOLDOWN, COMPLIANT_VERDICT, FAKE_FRAME)  # reset
+            handler.handle(IDLE, COMPLIANT_VERDICT, FAKE_FRAME)       # reset
+            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME)   # fires again (2)
         assert mock_write.call_count == 2
 
     def test_denied_then_granted_fires_twice(self, handler):
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
-            handler.handle(DENIED, NON_COMPLIANT_VERDICT, FAKE_FRAME, None)   # fires (1)
-            handler.handle(COOLDOWN := SessionState.COOLDOWN, COMPLIANT_VERDICT, FAKE_FRAME, None)
-            handler.handle(IDLE, COMPLIANT_VERDICT, FAKE_FRAME, None)
-            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME, None)      # fires (2)
+            handler.handle(DENIED, NON_COMPLIANT_VERDICT, FAKE_FRAME)   # fires (1)
+            handler.handle(COOLDOWN := SessionState.COOLDOWN, COMPLIANT_VERDICT, FAKE_FRAME)
+            handler.handle(IDLE, COMPLIANT_VERDICT, FAKE_FRAME)
+            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME)      # fires (2)
         assert mock_write.call_count == 2
 
     def test_non_trigger_states_never_fire(self, handler):
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
             for state in (IDLE, EVALUATING, SessionState.PERSON_DETECTED,
                           SessionState.COOLDOWN):
-                handler.handle(state, COMPLIANT_VERDICT, FAKE_FRAME, None)
+                handler.handle(state, COMPLIANT_VERDICT, FAKE_FRAME)
         mock_write.assert_not_called()
 
 
 class TestFilename:
     def test_filename_contains_verdict_label(self, handler):
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
-            handler.handle(DENIED, NON_COMPLIANT_VERDICT, FAKE_FRAME, None)
+            handler.handle(DENIED, NON_COMPLIANT_VERDICT, FAKE_FRAME)
         saved_path = mock_write.call_args[0][0]
         assert "denied" in saved_path
 
     def test_filename_contains_verdict_label_granted(self, handler):
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
-            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME, None)
+            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME)
         saved_path = mock_write.call_args[0][0]
         assert "granted" in saved_path
 
     def test_filename_ends_with_jpg(self, handler):
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
-            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME, None)
+            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME)
         saved_path = mock_write.call_args[0][0]
         assert saved_path.endswith(".jpg")
 
     def test_correct_frame_passed_to_imwrite(self, handler):
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
-            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME, None)
+            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME)
         frame_arg = mock_write.call_args[0][1]
         assert (frame_arg == FAKE_FRAME).all()
 
@@ -111,12 +111,36 @@ class TestFilename:
 class TestNoneFrame:
     def test_none_frame_does_not_crash(self, handler):
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
-            handler.handle(GRANTED, COMPLIANT_VERDICT, None, None)  # must not raise
+            handler.handle(GRANTED, COMPLIANT_VERDICT, None)  # must not raise
         mock_write.assert_not_called()
 
     def test_none_frame_still_debounces(self, handler):
         """Even with no frame, the state is consumed so no retry spam on next frames."""
         with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
-            handler.handle(GRANTED, COMPLIANT_VERDICT, None, None)   # skipped (no frame)
-            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME, None)  # debounced — NOT saved
+            handler.handle(GRANTED, COMPLIANT_VERDICT, None)   # skipped (no frame)
+            handler.handle(GRANTED, COMPLIANT_VERDICT, FAKE_FRAME)  # debounced — NOT saved
         mock_write.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Room zone events
+# ---------------------------------------------------------------------------
+
+class TestZoneEvents:
+    def test_zone_event_saves_and_records_snapshot_path(self, handler):
+        from core.zone_monitor import RESTRICTED_ENTRY, ZoneEvent
+        ev = ZoneEvent(event_type=RESTRICTED_ENTRY, zone="Server", track_id=2)
+        with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
+            handler.handle_zone_event(ev, FAKE_FRAME)
+        mock_write.assert_called_once()
+        assert ev.snapshot is not None
+        assert "restricted_entry_room" in ev.snapshot
+        assert ev.snapshot.endswith(".jpg")
+
+    def test_zone_event_with_no_frame_leaves_snapshot_empty(self, handler):
+        from core.zone_monitor import HAZARD_PPE, ZoneEvent
+        ev = ZoneEvent(event_type=HAZARD_PPE, zone="Machine", track_id=2)
+        with patch("alerts.screenshot_handler.cv2.imwrite") as mock_write:
+            handler.handle_zone_event(ev, None)
+        mock_write.assert_not_called()
+        assert ev.snapshot is None

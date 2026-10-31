@@ -1,0 +1,198 @@
+# Raspberry Pi version of config.yaml. Run with:
+#   python main.py --config config/config_pi.yaml
+# After exporting the model to NCNN (see README), point detector.weights at
+# the export folder, e.g. "models/exp01_roboflow/weights/best_ncnn_model".
+
+# --- Run mode ---
+# laptop: development on the PC. LEDs are simulated (gpiozero MockFactory),
+#         cameras are usually a webcam index or a recorded video file.
+# pi:     Raspberry Pi 4/5. LEDs drive real GPIO pins, CSI cameras use
+#         backend "picamera2".
+mode: pi
+
+# --- Cameras ---
+# Two logical cameras, matching the demo layout:
+#   entrance: faces the green check zone at the door (PPE ALLOW/DENY)
+#   room:     overlooks the room (hazard + restricted zone monitoring)
+#
+# backend:
+#   opencv    — source is a webcam index (0, 1, ...) or a video file path.
+#               Use a recorded video to test zone rules repeatably.
+#   picamera2 — source is the CSI camera number (0 or 1). Pi only.
+#               Raspberry Pi 4 has ONE CSI port, so on a Pi 4 the room
+#               camera must be a USB webcam (backend opencv).
+# loop_video: restart a video file when it ends (testing convenience).
+# enabled: false skips the camera and its pipeline entirely.
+cameras:
+  entrance:
+    enabled: true
+    backend: picamera2
+    source: 0
+    width: 640
+    height: 480
+    max_failed_reads: 10
+    loop_video: false
+  room:
+    enabled: true
+    # Pi 5: second CSI port -> backend picamera2, source 1
+    # Pi 4: only one CSI port -> USB webcam: backend opencv, source 0
+    backend: picamera2
+    source: 1
+    width: 640
+    height: 480
+    max_failed_reads: 10
+    loop_video: true
+
+dashboard:
+  host: "0.0.0.0"
+  port: 5000
+
+# imgsz: YOLO input size. 640 on the laptop; 320 is a sensible starting
+#   point on the Pi (roughly 4x less compute). The same .pt file works at
+#   either size. On the Pi, an NCNN export folder can be used as weights
+#   (see README) — it is the same model, just faster on ARM CPUs.
+# tracker: ByteTrack config used by the room camera to give each person a
+#   stable ID across frames (needed for "in the zone for N seconds").
+detector:
+  weights: "models/exp01_roboflow/weights/best.pt"
+  confidence_threshold: 0.5
+  imgsz: 320
+  tracker: "bytetrack.yaml"
+
+alerts:
+  screenshot_dir: "output/screenshots"
+
+storage:
+  db_path: "output/events.db"
+
+# Voice prompts, played with aplay (ALSA). On the Pi 5 there is no 3.5 mm
+# jack, so set the USB speaker as the default ALSA device (see README).
+# Missing files are skipped with a warning — never fatal.
+# denied_sound / hazard_sound are used when BOTH helmet and vest are
+# missing; the *_no_helmet / *_no_vest prompts when only one is missing.
+voice:
+  granted_sound:          "assets/audio/granted.wav"
+  denied_sound:           "assets/audio/denied.wav"
+  denied_no_helmet_sound: "assets/audio/denied_no_helmet.wav"
+  denied_no_vest_sound:   "assets/audio/denied_no_vest.wav"
+  hazard_sound:           "assets/audio/hazard_ppe.wav"
+  hazard_no_helmet_sound: "assets/audio/hazard_no_helmet.wav"
+  hazard_no_vest_sound:   "assets/audio/hazard_no_vest.wav"
+  restricted_sound:       "assets/audio/restricted.wav"
+
+# Status LEDs (BCM pin numbers), driven through gpiozero.
+#   green: entrance ALLOW hold
+#   red:   entrance DENY hold, and for red_hold_seconds after a
+#          RESTRICTED_ENTRY event
+# In laptop mode the pins are simulated and only logged.
+leds:
+  enabled: true
+  green_pin: 17
+  red_pin: 22
+  red_hold_seconds: 5.0
+
+# Per-person, geometry-aware PPE evaluation (core/decision_engine.py).
+# containment_threshold: minimum fraction of a PPE box's area that must
+# fall inside a person's box for that PPE item to be considered theirs.
+# head/torso ratios define the expected body region (as a fraction of the
+# person's own box) where a helmet/vest centroid must land to count as
+# correctly worn, rather than merely present somewhere in the frame.
+# CALIBRATION NOTE: these ratios are reasonable starting estimates based
+# on typical human body proportions, not measurements from real camera
+# footage — they require tuning once real deployment footage from the
+# mounted camera is available.
+# debug / debug_overlay: calibration/diagnostic tools ONLY. Both default
+# false and should be switched on temporarily while tuning the ratios
+# below against real camera footage, then switched off again.
+#   debug: DecisionEngine logs every (person, ppe_item) candidate pair it
+#     considers at DEBUG level and populates FrameVerdict.debug_info.
+#   debug_overlay: dashboard/app.py draws the same diagnostic geometry
+#     onto the entrance MJPEG stream.
+decision_engine:
+  containment_threshold: 0.60
+  debug: false
+  debug_overlay: false
+  head:
+    top_ratio: 0.25
+    width_ratio: 0.55
+  torso:
+    top_ratio: 0.25
+    bottom_ratio: 0.75
+    width_ratio: 0.80
+  # "Worn, not just present": shape rules that reject a vest held in the
+  # hand or a helmet held beside the head (see core/decision_engine.py,
+  # "Wear check"). Ratios are relative to the person's own box. Starting
+  # values — tune with debug + debug_overlay while trying worn vs held.
+  wear_check:
+    enabled: true
+    helmet_max_top_gap: 0.08      # helmet top within 8% of person height from the top
+    helmet_min_width_ratio: 0.15
+    vest_min_width_ratio: 0.45    # vest at least 45% of person width
+    vest_max_center_offset: 0.20  # vest centre within 20% of width from body centre
+    vest_max_top_ratio: 0.50      # vest starts in the upper half of the person box
+    vest_min_height_ratio: 0.20
+
+  # Pose check (core/pose_wear_check.py): a small pose model finds the
+  # shoulders, wrists and nose, and rejects PPE that is HELD instead of
+  # worn (vest held at the waist or up in front, helmet held in the hand).
+  # Box shapes alone cannot tell these apart. Checkpoint rule: stand with
+  # arms down. The weights download automatically the first time on the
+  # laptop (needs internet once); copy yolov8n-pose.pt to the Pi.
+  # Ratios are in shoulder widths. Entrance camera only.
+  pose_check:
+    enabled: true
+    weights: "yolov8n-pose.pt"
+    imgsz: 320
+    keypoint_conf: 0.5
+    hand_hold_ratio: 1.0               # wrist closer than 1 shoulder width below shoulders, over the vest = holding
+    shoulder_margin: 0.15
+    vest_top_max_below_shoulder: 0.35
+    helmet_max_offset: 0.5             # helmet centre vs nose, left/right
+    helmet_max_bottom_below_nose: 0.15
+    helmet_hand_pad: 0.4               # a wrist on/around the helmet = held (stand with hands down)
+    helmet_max_gap_above_eyes: 0.06    # helmet bottom higher than the eyes = held above the head
+
+# Entrance ALLOW/DENY session (core/session_controller.py).
+# evaluating_seconds: how long votes are collected once a person is at the
+#   check point. Time-based (not a frame count) so the laptop (~30 FPS)
+#   and the Pi (~2-5 FPS) behave the same.
+# min_votes: the window also needs at least this many processed frames
+#   before deciding — on a very slow device the window simply runs a bit
+#   longer instead of deciding from one or two frames.
+session:
+  evaluating_seconds: 1.5
+  min_votes: 3
+  decision_hold_seconds: 5.0
+  cooldown_seconds: 3.0
+
+# Room zone monitoring (core/zone_monitor.py).
+# Polygons are in pixel coordinates of the ROOM camera frame (width x
+# height above). Use scripts/zone_picker.py to click them out on a real
+# frame and paste the printed list here.
+# A person is "in" a zone when the bottom-centre of their box (their feet)
+# is inside the polygon. A zone that reaches the bottom of the picture
+# should extend PAST it (e.g. y = 500 for a 480-high frame): a person near
+# the camera is cut off at the bottom edge, so their foot point is on the
+# last pixel row. zone_picker.py does this snapping automatically.
+#   hazard:     PPE required. Missing helmet or vest for hazard_seconds
+#               -> voice + snapshot + HAZARD_PPE event.
+#   restricted: nobody allowed. Inside for restricted_seconds
+#               -> voice + red LED + snapshot + RESTRICTED_ENTRY event.
+# grace_seconds: a person may vanish for this long (missed detection,
+#   brief occlusion, a PPE flicker) without their zone timer restarting.
+#   Must be longer than the time between processed frames — at 2 FPS on
+#   the Pi that is 0.5 s, so 1.0 leaves room for jitter.
+# cooldown_seconds: the same person (track ID) does not raise the same
+#   event type again within this window.
+zones:
+  hazard_seconds: 2.0
+  restricted_seconds: 1.0
+  grace_seconds: 1.0
+  cooldown_seconds: 30.0
+  areas:
+    - name: "Machine area"
+      type: hazard
+      polygon: [[40, 260], [300, 260], [300, 500], [40, 500]]
+    - name: "Server cabinet"
+      type: restricted
+      polygon: [[420, 260], [620, 260], [620, 500], [420, 500]]

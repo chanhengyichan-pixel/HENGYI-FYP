@@ -135,7 +135,22 @@
       color: var(--text-dim);
     }
 
-    #camera-img-wrap {
+    .cam-panel {
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .cam-panel + .cam-panel { border-top: 1px solid var(--border); }
+
+    .camera-header-sub {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      font-family: "Courier New", monospace;
+    }
+
+    #camera-img-wrap, .camera-img-wrap {
       flex: 1 1 0;
       min-height: 0;
       display: flex;
@@ -144,7 +159,7 @@
       background: #000;
     }
 
-    #camera-img-wrap img {
+    #camera-img-wrap img, .camera-img-wrap img {
       width: 100%;
       height: 100%;
       object-fit: contain;
@@ -383,7 +398,21 @@
     tbody tr.ev-denied  td              { color: var(--text-muted); }
     tbody tr.ev-denied  td:nth-child(2) { color: var(--red); font-weight: 600; }
 
+    tbody tr.ev-hazard td:nth-child(2)     { color: var(--amber); font-weight: 600; }
+    tbody tr.ev-restricted td              { color: var(--text); }
+    tbody tr.ev-restricted td:nth-child(2) { color: var(--red); font-weight: 700; }
+
     .no-events td { color: var(--text-muted); font-style: italic; }
+
+    /* ── Room card ── */
+    #room-card { flex-shrink: 0; }
+    #room-body { padding: 8px 14px 10px; display: flex; flex-direction: column; gap: 6px; }
+    .room-row { display: flex; justify-content: space-between; font-size: 0.92rem; }
+    .room-alert { font-size: 0.88rem; padding: 4px 8px; border-radius: 4px; }
+    .room-alert.hazard     { background: #2a1c03; color: var(--amber); }
+    .room-alert.restricted { background: var(--red-bg); color: var(--red); }
+    .room-alert.ok         { background: var(--green-bg); color: var(--green); }
+    .room-empty { color: var(--text-muted); font-size: 0.88rem; font-style: italic; }
 
     /* ── Responsive ── */
     @media (max-width: 860px) {
@@ -418,13 +447,27 @@
 
     <!-- Camera -->
     <div id="left-col">
-      <div id="camera-header">
-        <div id="live-dot"></div>
-        <span id="camera-lbl">Live Camera Feed</span>
+      <div class="cam-panel">
+        <div id="camera-header">
+          <div id="live-dot"></div>
+          <span id="camera-lbl">Entrance — PPE Check</span>
+        </div>
+        <div id="camera-img-wrap">
+          <img src="/video_feed/entrance" alt="Entrance camera feed">
+        </div>
       </div>
-      <div id="camera-img-wrap">
-        <img src="/video_feed" alt="Camera feed">
+      {% if room_enabled %}
+      <div class="cam-panel">
+        <div id="camera-header">
+          <div id="live-dot"></div>
+          <span id="camera-lbl">Room — Zone Monitoring</span>
+          <span class="camera-header-sub" id="room-sub">—</span>
+        </div>
+        <div class="camera-img-wrap">
+          <img src="/video_feed/room" alt="Room camera feed">
+        </div>
       </div>
+      {% endif %}
     </div>
 
     <!-- Sidebar -->
@@ -464,6 +507,17 @@
         </div>
       </div>
 
+      {% if room_enabled %}
+      <!-- Room zones -->
+      <div id="room-card" class="card">
+        <div class="card-hdr">Room Zones</div>
+        <div id="room-body">
+          <div class="room-row"><span>People in view</span><span id="room-persons">—</span></div>
+          <div id="room-alerts"><span class="room-empty">Nobody in a zone</span></div>
+        </div>
+      </div>
+      {% endif %}
+
       <!-- Live detections -->
       <div id="det-card" class="card">
         <div class="card-hdr">Live Detections</div>
@@ -478,7 +532,7 @@
         <div id="events-scroll">
           <table>
             <thead>
-              <tr><th>Time</th><th>Worker</th><th>Decision</th><th>Violations</th></tr>
+              <tr><th>Time</th><th>Event</th><th>Where</th><th>Violations</th></tr>
             </thead>
             <tbody id="events">
               <tr class="no-events"><td colspan="4">No events yet</td></tr>
@@ -508,6 +562,36 @@
       "no-vest":   "dc-no-vest",
       person:      "dc-person",
     };
+
+    const EVENT_LABEL = {
+      ENTRY_GRANTED:    { txt: "ENTRY ALLOWED",  cls: "ev-granted" },
+      ENTRY_DENIED:     { txt: "ENTRY DENIED",   cls: "ev-denied" },
+      HAZARD_PPE:       { txt: "HAZARD — NO PPE", cls: "ev-hazard" },
+      RESTRICTED_ENTRY: { txt: "RESTRICTED",     cls: "ev-restricted" },
+    };
+
+    function updateRoom(room) {
+      if (!room || !room.enabled) return;
+      document.getElementById("room-sub").textContent =
+        room.camera_status + " · " + room.fps + " fps";
+      document.getElementById("room-persons").textContent = room.persons;
+      const box = document.getElementById("room-alerts");
+      if (!room.zone_status.length) {
+        box.innerHTML = '<span class="room-empty">Nobody in a zone</span>';
+        return;
+      }
+      box.innerHTML = room.zone_status.map(z => {
+        let cls = z.zone_type, msg;
+        if (z.zone_type === "hazard" && z.ppe_ok) {
+          cls = "ok"; msg = "PPE OK";
+        } else if (z.zone_type === "hazard") {
+          msg = "missing " + z.violations.join(", ") + " · " + z.seconds.toFixed(1) + "s";
+        } else {
+          msg = "NO ENTRY · " + z.seconds.toFixed(1) + "s";
+        }
+        return `<div class="room-alert ${cls}">#${z.track_id} in ${z.zone}: ${msg}</div>`;
+      }).join("");
+    }
 
     function ppeStatus(dets, pos, neg) {
       const names = dets.map(d => d.class_name);
@@ -568,6 +652,8 @@
             }).join("");
           }
 
+          updateRoom(data.room);
+
           // Events
           const tbody = document.getElementById("events");
           if (!data.recent_events.length) {
@@ -575,13 +661,13 @@
             return;
           }
           tbody.innerHTML = data.recent_events.map(e => {
-            const cls    = e.verdict === "granted" ? "ev-granted" : "ev-denied";
-            const viol   = e.violations.length ? e.violations.join(", ") : "—";
-            const worker = e.worker_name || "unknown";
-            return `<tr class="${cls}">
+            const lbl   = EVENT_LABEL[e.event_type] || { txt: e.event_type, cls: "" };
+            const viol  = e.violations.length ? e.violations.join(", ") : "—";
+            const where = e.zone ? e.zone : e.camera;
+            return `<tr class="${lbl.cls}">
               <td>${e.timestamp.slice(11)}</td>
-              <td>${worker}</td>
-              <td>${e.verdict.toUpperCase()}</td>
+              <td>${lbl.txt}</td>
+              <td>${where}</td>
               <td>${viol}</td>
             </tr>`;
           }).join("");

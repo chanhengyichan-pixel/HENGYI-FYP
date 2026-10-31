@@ -116,7 +116,7 @@
     /* ── Stats summary row ── */
     #stats-row {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       gap: 12px;
     }
 
@@ -147,6 +147,14 @@
     .stat-val.cyan   { color: var(--cyan); }
     .stat-val.green  { color: var(--green); }
     .stat-val.red    { color: var(--red); }
+    .stat-val.amber  { color: #f59e0b; }
+    #type-filter {
+      margin-left: auto; background: #111820; color: inherit;
+      border: 1px solid #1e2d3d; border-radius: 4px; padding: 2px 6px; font-size: 0.8rem;
+    }
+    tbody tr.ev-hazard td:nth-child(2)     { color: #f59e0b; font-weight: 600; }
+    tbody tr.ev-restricted td:nth-child(2) { color: #ef4444; font-weight: 700; }
+    td a { color: #00b4d8; }
 
     /* ── Compliance bar ── */
     #compliance-card .card-body {
@@ -325,6 +333,14 @@
         <div class="stat-lbl">Denied</div>
         <div class="stat-val red" id="s-denied">—</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-lbl">Hazard (no PPE)</div>
+        <div class="stat-val amber" id="s-hazard">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-lbl">Restricted entry</div>
+        <div class="stat-val red" id="s-restricted">—</div>
+      </div>
     </div>
 
     <!-- Compliance bar -->
@@ -351,13 +367,22 @@
 
     <!-- Full event history -->
     <div class="card">
-      <div class="card-hdr">Full Event History</div>
+      <div class="card-hdr" style="display:flex;align-items:center">
+        Full Event History
+        <select id="type-filter" onchange="currentPage = 1; loadEvents(1)">
+          <option value="">All events</option>
+          <option value="ENTRY_GRANTED">Entry allowed</option>
+          <option value="ENTRY_DENIED">Entry denied</option>
+          <option value="HAZARD_PPE">Hazard — no PPE</option>
+          <option value="RESTRICTED_ENTRY">Restricted entry</option>
+        </select>
+      </div>
       <table>
         <thead>
-          <tr><th>Timestamp</th><th>Worker</th><th>Decision</th><th>Violations</th></tr>
+          <tr><th>Timestamp</th><th>Event</th><th>Where</th><th>Violations</th><th>Snapshot</th></tr>
         </thead>
         <tbody id="events-tbody">
-          <tr class="no-events"><td colspan="4">Loading...</td></tr>
+          <tr class="no-events"><td colspan="5">Loading...</td></tr>
         </tbody>
       </table>
       <div id="pagination">
@@ -379,9 +404,11 @@
           document.getElementById("s-total").textContent   = data.total_events;
           document.getElementById("s-granted").textContent = data.granted_count;
           document.getElementById("s-denied").textContent  = data.denied_count;
+          document.getElementById("s-hazard").textContent  = data.hazard_count;
+          document.getElementById("s-restricted").textContent = data.restricted_count;
 
-          // Compliance bar
-          const total = data.total_events;
+          // Entrance compliance bar (entrance decisions only)
+          const total = data.granted_count + data.denied_count;
           const pct   = total > 0 ? Math.round(data.granted_count / total * 100) : 0;
           document.getElementById("compliance-bar-fill").style.width = pct + "%";
           document.getElementById("bar-granted-pct").textContent =
@@ -411,23 +438,35 @@
         });
     }
 
+    const EVENT_LABEL = {
+      ENTRY_GRANTED:    { txt: "ENTRY ALLOWED",   cls: "ev-granted" },
+      ENTRY_DENIED:     { txt: "ENTRY DENIED",    cls: "ev-denied" },
+      HAZARD_PPE:       { txt: "HAZARD — NO PPE", cls: "ev-hazard" },
+      RESTRICTED_ENTRY: { txt: "RESTRICTED",      cls: "ev-restricted" },
+    };
+
     function loadEvents(page) {
-      fetch("/api/events?page=" + page)
+      const type = document.getElementById("type-filter").value;
+      fetch("/api/events?page=" + page + (type ? "&type=" + type : ""))
         .then(r => r.json())
         .then(data => {
           const tbody = document.getElementById("events-tbody");
           if (data.events.length === 0) {
-            tbody.innerHTML = '<tr class="no-events"><td colspan="4">No events yet.</td></tr>';
+            tbody.innerHTML = '<tr class="no-events"><td colspan="5">No events yet.</td></tr>';
           } else {
             tbody.innerHTML = data.events.map(e => {
-              const cls    = e.verdict === "granted" ? "ev-granted" : "ev-denied";
-              const viol   = e.violations.length ? e.violations.join(", ") : "—";
-              const worker = e.worker_name || "unknown";
-              return `<tr class="${cls}">
+              const lbl   = EVENT_LABEL[e.event_type] || { txt: e.event_type, cls: "" };
+              const viol  = e.violations.length ? e.violations.join(", ") : "—";
+              const where = e.zone ? e.camera + " / " + e.zone : e.camera;
+              const snap  = e.snapshot
+                ? `<a href="/snapshots/${e.snapshot.split("/").pop()}" target="_blank">view</a>`
+                : "—";
+              return `<tr class="${lbl.cls}">
                 <td>${e.timestamp}</td>
-                <td>${worker}</td>
-                <td>${e.verdict.toUpperCase()}</td>
+                <td>${lbl.txt}</td>
+                <td>${where}</td>
                 <td>${viol}</td>
+                <td>${snap}</td>
               </tr>`;
             }).join("");
           }

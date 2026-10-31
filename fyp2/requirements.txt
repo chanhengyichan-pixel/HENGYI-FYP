@@ -1,3 +1,14 @@
+# Shared by laptop and Raspberry Pi.
+# On the Pi, create the venv with --system-site-packages so the
+# apt-installed picamera2 and gpiozero are visible (see README).
+ultralytics>=8.3,<9
+lap>=0.5            # ByteTrack association (room camera tracking)
 opencv-python==4.10.0.84
+numpy<2.3
 flask==3.1.1
 pyyaml==6.0.2
+pytest>=8
+
+# Optional on the laptop: simulated LEDs work without it (logging stand-in),
+# but installing it exercises the real gpiozero MockFactory path.
+# gpiozero>=2.0

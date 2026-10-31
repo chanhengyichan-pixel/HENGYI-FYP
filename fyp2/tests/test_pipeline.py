@@ -28,7 +28,7 @@ from core.session_controller import SessionController, SessionState
 # Helpers
 # ---------------------------------------------------------------------------
 
-BASE_CONFIG = {"session": {"evaluating_frame_count": 15,
+BASE_CONFIG = {"session": {"evaluating_seconds": 1.5, "min_votes": 3,
                             "decision_hold_seconds": 5.0,
                             "cooldown_seconds": 3.0},
                "decision_engine": {"debug": False}}
@@ -64,6 +64,36 @@ def make_stubs(processed_event: threading.Event | None = None):
     sc.update.return_value = _FAKE_SESSION_STATE
 
     return shared_state, detector, de, sc
+
+
+class FrameFeeder:
+    """Keep publishing NEW frames into a SharedState from a background thread.
+
+    The pipeline only processes a frame whose frame_id it has not seen, so
+    tests that need several pipeline cycles must keep supplying frames —
+    like a real camera does.
+    """
+
+    def __init__(self, shared_state, interval=0.005):
+        self._state = shared_state
+        self._interval = interval
+        self._running = False
+        self._thread = None
+
+    def __enter__(self):
+        self._running = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._running = False
+        self._thread.join(timeout=1)
+
+    def _run(self):
+        while self._running:
+            self._state.set_frame(_FAKE_FRAME.copy())
+            time.sleep(self._interval)
 
 
 def make_pipeline(shared_state, detector, de, sc):
@@ -186,12 +216,26 @@ class TestSharedStateWrites:
         detector.detect.side_effect = _detect
 
         pipeline = make_pipeline(shared_state, detector, de, sc)
-        pipeline.start()
-        event.wait(timeout=3)
-        time.sleep(0.02)
-        pipeline.stop()
+        with FrameFeeder(shared_state):
+            pipeline.start()
+            event.wait(timeout=3)
+            time.sleep(0.02)
+            pipeline.stop()
 
         assert shared_state.get_fps() > 0.0
+
+    def test_same_frame_is_processed_only_once(self):
+        # One frame published, pipeline left running: detect() runs once,
+        # not once per loop iteration.
+        event = threading.Event()
+        shared_state, detector, de, sc = make_stubs(event)
+        pipeline = make_pipeline(shared_state, detector, de, sc)
+        pipeline.start()
+        event.wait(timeout=2)
+        time.sleep(0.1)
+        pipeline.stop()
+
+        assert detector.detect.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +316,7 @@ class TestSessionStateLogging:
 
         pipeline = Pipeline(BASE_CONFIG, shared_state, None, detector, de, sc)
 
-        with caplog.at_level(logging.INFO, logger="core.pipeline"):
+        with caplog.at_level(logging.INFO, logger="core.pipeline"), FrameFeeder(shared_state):
             pipeline.start()
             event.wait(timeout=2)
             time.sleep(0.02)
@@ -342,7 +386,7 @@ class TestCameraDisconnected:
         already passed — retroactive catch-up, not continuous expiry.
         """
         fake_clock = [0.0]
-        sc_config = {"session": {"evaluating_frame_count": 5,
+        sc_config = {"session": {"evaluating_seconds": 0.0, "min_votes": 5,
                                   "decision_hold_seconds": 10.0,
                                   "cooldown_seconds": 3.0}}
         sc = SessionController(sc_config, clock=lambda: fake_clock[0])
@@ -419,241 +463,6 @@ class TestCameraDisconnected:
 # Stop halts the loop
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Identity invalidation (face recognition worker-swap detection)
-# ---------------------------------------------------------------------------
-
-class TestIdentityInvalidation:
-    """
-    Tests for the two-point identity check added in Milestone 12.
-
-    Uses a real SessionController (small window) and a stub FaceRecognizer
-    injected via the face_recognizer= parameter so no LBPH model is needed.
-
-    The face_recognizer stub has an .identify attribute that tests can
-    control to return different identities at the opening vs. closing check.
-    """
-
-    _SC_CONFIG = {"session": {"evaluating_frame_count": 3,
-                               "decision_hold_seconds": 10.0,
-                               "cooldown_seconds": 3.0},
-                  "decision_engine": {"debug": False}}
-
-    @staticmethod
-    def _make_fr_stub(two_results: list):
-        """
-        Return a stub FaceRecognizer whose identify() returns:
-          - two_results[0] on the first call (opening identity check)
-          - two_results[1] on the second call (closing identity check)
-          - two_results[1] on all subsequent calls (pipeline may keep running)
-        """
-        stub = MagicMock()
-        # Pad with the second value repeated to avoid StopIteration.
-        padded = list(two_results) + [two_results[-1]] * 100
-        stub.identify.side_effect = padded
-        return stub
-
-    def _run_session(self, fr_stub, compliant=True):
-        """
-        Drive one full session through the pipeline and return (final_state, shared_state).
-
-        Frame sequence for evaluating_frame_count=3:
-          Frame 1 (NO_PERSON): IDLE
-          Frame 2 (person):    IDLE → PERSON_DETECTED  [identity check 1]
-          Frame 3 (person):    PERSON_DETECTED → EVALUATING (vote 1)
-          Frame 4 (person):    EVALUATING (vote 2)
-          Frame 5 (person):    EVALUATING (vote 3 → decision)  [identity check 2, before update]
-        """
-        fake_clock = [0.0]
-        sc = SessionController(self._SC_CONFIG, clock=lambda: fake_clock[0])
-        shared_state = SharedState()
-
-        verdict_seq = [
-            FrameVerdict(status=ComplianceStatus.NO_PERSON),
-            FrameVerdict(status=ComplianceStatus.COMPLIANT if compliant else ComplianceStatus.NON_COMPLIANT, person_count=1),
-            FrameVerdict(status=ComplianceStatus.COMPLIANT if compliant else ComplianceStatus.NON_COMPLIANT, person_count=1),
-            FrameVerdict(status=ComplianceStatus.COMPLIANT if compliant else ComplianceStatus.NON_COMPLIANT, person_count=1),
-            FrameVerdict(status=ComplianceStatus.COMPLIANT if compliant else ComplianceStatus.NON_COMPLIANT, person_count=1),
-        ]
-        de = MagicMock()
-        de.evaluate.side_effect = list(verdict_seq) + [verdict_seq[-1]] * 100
-
-        done_event = threading.Event()
-        frame_count = [0]
-
-        def _detect(frame):
-            frame_count[0] += 1
-            if frame_count[0] >= 5:
-                done_event.set()
-            return []
-
-        detector = MagicMock()
-        detector.detect.side_effect = _detect
-
-        shared_state.set_frame(np.zeros((480, 640, 3), dtype=np.uint8))
-
-        pipeline = Pipeline(self._SC_CONFIG, shared_state, None, detector, de,
-                            sc, face_recognizer=fr_stub)
-        pipeline.start()
-        done_event.wait(timeout=3)
-        time.sleep(0.05)
-        pipeline.stop()
-
-        return shared_state.get_session_state(), shared_state
-
-    def test_matching_identities_complete_normally(self):
-        """Same name at open and close → session proceeds to GRANTED."""
-        fr = self._make_fr_stub([
-            ("Alice", 30.0),   # opening check
-            ("Alice", 32.0),   # closing check (same person)
-        ])
-        final_state, ss = self._run_session(fr, compliant=True)
-        assert final_state is SessionState.GRANTED
-
-    def test_differing_identities_trigger_reset(self):
-        """Different names at open and close → session_controller.reset() is called."""
-        # We can't check final state — after reset(), the pipeline immediately
-        # continues and may complete a new session.  Instead verify reset() fired.
-        swap_event = threading.Event()
-        fake_clock = [0.0]
-        sc = SessionController(self._SC_CONFIG, clock=lambda: fake_clock[0])
-        original_reset = sc.reset
-
-        def _spy_reset():
-            original_reset()
-            swap_event.set()
-
-        sc.reset = _spy_reset
-
-        fr = self._make_fr_stub([
-            ("Alice", 30.0),   # opening check
-            ("Bob", 28.0),     # closing check (different person → swap)
-        ])
-
-        shared_state = SharedState()
-        verdict_seq = [
-            FrameVerdict(status=ComplianceStatus.NO_PERSON),
-            *(FrameVerdict(status=ComplianceStatus.COMPLIANT, person_count=1),) * 100,
-        ]
-        de = MagicMock()
-        de.evaluate.side_effect = verdict_seq
-
-        detector = MagicMock()
-        detector.detect.return_value = []
-        shared_state.set_frame(np.zeros((480, 640, 3), dtype=np.uint8))
-
-        pipeline = Pipeline(self._SC_CONFIG, shared_state, None, detector, de,
-                            sc, face_recognizer=fr)
-        pipeline.start()
-        triggered = swap_event.wait(timeout=3)
-        pipeline.stop()
-
-        assert triggered, "session_controller.reset() was never called — swap not detected"
-
-    def test_none_opening_identity_does_not_invalidate(self):
-        """If opening check returns None, closing check cannot trigger a swap."""
-        fr = self._make_fr_stub([
-            None,              # opening check: face not visible
-            ("Bob", 28.0),    # closing check: somebody identified
-        ])
-        final_state, ss = self._run_session(fr, compliant=True)
-        # No invalidation — None on opening side
-        assert final_state is SessionState.GRANTED
-
-    def test_none_closing_identity_does_not_invalidate(self):
-        """If closing check returns None, no invalidation even if opening was confident."""
-        fr = self._make_fr_stub([
-            ("Alice", 30.0),   # opening check: confident
-            None,              # closing check: face not visible
-        ])
-        final_state, ss = self._run_session(fr, compliant=True)
-        assert final_state is SessionState.GRANTED
-
-    def test_both_none_does_not_invalidate(self):
-        """Two None results do not trigger a swap."""
-        fr = self._make_fr_stub([None, None])
-        final_state, ss = self._run_session(fr, compliant=True)
-        assert final_state is SessionState.GRANTED
-
-    def test_worker_name_cleared_on_swap(self):
-        """After swap invalidation, set_worker_name('unknown') is called."""
-        # Spy on shared_state.set_worker_name; collect every value it's called with.
-        # After a swap the pipeline must call it with "unknown" before anything else.
-        unknown_event = threading.Event()
-        shared_state = SharedState()
-        original_set = shared_state.set_worker_name
-        set_calls: list[str] = []
-
-        def _spy_set(name: str) -> None:
-            original_set(name)
-            set_calls.append(name)
-            if name == "unknown":
-                unknown_event.set()
-
-        shared_state.set_worker_name = _spy_set
-
-        fake_clock = [0.0]
-        sc = SessionController(self._SC_CONFIG, clock=lambda: fake_clock[0])
-        fr = self._make_fr_stub([("Alice", 30.0), ("Bob", 28.0)])
-
-        verdict_seq = [
-            FrameVerdict(status=ComplianceStatus.NO_PERSON),
-            *(FrameVerdict(status=ComplianceStatus.COMPLIANT, person_count=1),) * 100,
-        ]
-        de = MagicMock()
-        de.evaluate.side_effect = verdict_seq
-        detector = MagicMock()
-        detector.detect.return_value = []
-        shared_state.set_frame(np.zeros((480, 640, 3), dtype=np.uint8))
-
-        pipeline = Pipeline(self._SC_CONFIG, shared_state, None, detector, de,
-                            sc, face_recognizer=fr)
-        pipeline.start()
-        triggered = unknown_event.wait(timeout=3)
-        pipeline.stop()
-
-        assert triggered, "set_worker_name('unknown') was never called after swap"
-        # The call sequence must have been: "Alice" (opening), then "unknown" (swap clear).
-        assert "Alice" in set_calls
-        unknown_idx = next(i for i, v in enumerate(set_calls) if v == "unknown")
-        alice_idx = set_calls.index("Alice")
-        assert alice_idx < unknown_idx, "worker_name should be set to Alice before being cleared"
-
-    def test_no_face_recognizer_still_completes_session(self):
-        """face_recognizer=None disables identity checks; session completes normally."""
-        fake_clock = [0.0]
-        sc = SessionController(self._SC_CONFIG, clock=lambda: fake_clock[0])
-        shared_state = SharedState()
-        verdict_seq = [
-            FrameVerdict(status=ComplianceStatus.NO_PERSON),
-            *(FrameVerdict(status=ComplianceStatus.COMPLIANT, person_count=1),) * 10,
-        ]
-        de = MagicMock()
-        de.evaluate.side_effect = verdict_seq
-
-        done_event = threading.Event()
-        frame_count = [0]
-
-        def _detect(frame):
-            frame_count[0] += 1
-            if frame_count[0] >= 5:
-                done_event.set()
-            return []
-
-        detector = MagicMock()
-        detector.detect.side_effect = _detect
-        shared_state.set_frame(np.zeros((480, 640, 3), dtype=np.uint8))
-
-        pipeline = Pipeline(self._SC_CONFIG, shared_state, None, detector, de,
-                            sc, face_recognizer=None)
-        pipeline.start()
-        done_event.wait(timeout=3)
-        time.sleep(0.05)
-        pipeline.stop()
-
-        assert shared_state.get_session_state() is SessionState.GRANTED
-
-
 class TestStop:
     def test_stop_halts_shared_state_writes(self):
         event = threading.Event()
@@ -680,3 +489,62 @@ class TestStop:
         pipeline.stop()
 
         assert not pipeline._thread.is_alive()
+
+
+# ---------------------------------------------------------------------------
+# Alerts receive the window's decision violations
+# ---------------------------------------------------------------------------
+
+class TestAlertVerdict:
+    def test_denied_alert_uses_session_decision_violations(self):
+        event = threading.Event()
+        shared_state, detector, de, sc = make_stubs(event)
+        de.evaluate.return_value = FrameVerdict(
+            status=ComplianceStatus.NON_COMPLIANT,
+            violations=["no-helmet", "no-vest"], person_count=1)   # flickery frame
+        sc.update.return_value = SessionState.DENIED
+        sc.decision_violations = ["no-helmet"]                      # window majority
+        alerts = MagicMock()
+        pipeline = Pipeline(BASE_CONFIG, shared_state, None, detector, de, sc, alerts)
+        pipeline.start()
+        event.wait(timeout=2)
+        time.sleep(0.05)
+        pipeline.stop()
+
+        state, verdict, _ = alerts.notify.call_args[0]
+        assert state is SessionState.DENIED
+        assert verdict.violations == ["no-helmet"]
+
+    def test_non_decision_states_pass_frame_verdict_through(self):
+        event = threading.Event()
+        shared_state, detector, de, sc = make_stubs(event)
+        sc.update.return_value = SessionState.EVALUATING
+        alerts = MagicMock()
+        pipeline = Pipeline(BASE_CONFIG, shared_state, None, detector, de, sc, alerts)
+        pipeline.start()
+        event.wait(timeout=2)
+        time.sleep(0.05)
+        pipeline.stop()
+
+        assert alerts.notify.call_args[0][1] is _FAKE_VERDICT
+
+
+class TestPoseChecker:
+    def test_pose_checker_verdict_goes_to_session_controller(self):
+        event = threading.Event()
+        shared_state, detector, de, sc = make_stubs()
+        checked = FrameVerdict(status=ComplianceStatus.NON_COMPLIANT,
+                               violations=["no-vest"], person_count=1)
+        pose = MagicMock()
+        pose.check.return_value = checked
+        sc.update.side_effect = lambda v: (event.set(), _FAKE_SESSION_STATE)[1]
+        pipeline = Pipeline(BASE_CONFIG, shared_state, None, detector, de, sc,
+                            pose_checker=pose)
+        pipeline.start()
+        event.wait(timeout=2)
+        pipeline.stop()
+
+        frame, verdict = pose.check.call_args[0]
+        assert frame.shape == _FAKE_FRAME.shape
+        assert verdict is _FAKE_VERDICT
+        assert sc.update.call_args[0][0] is checked

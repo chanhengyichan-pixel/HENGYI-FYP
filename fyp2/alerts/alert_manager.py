@@ -24,14 +24,28 @@ class AlertManager:
     def __init__(self, handlers: list[BaseHandler]):
         self._handlers = handlers
 
-    def notify(self, session_state, frame_verdict, frame,
-               worker_name: str | None = None) -> None:
-        """Dispatch the current pipeline state to all registered handlers."""
+    def notify(self, session_state, frame_verdict, frame) -> None:
+        """Dispatch the current entrance pipeline state to all registered handlers."""
         for handler in self._handlers:
             try:
-                handler.handle(session_state, frame_verdict, frame, worker_name)
+                handler.handle(session_state, frame_verdict, frame)
             except Exception:
                 logger.exception(
                     "Handler %s raised an unhandled exception — skipping.",
+                    type(handler).__name__,
+                )
+
+    def notify_zone(self, event, frame) -> None:
+        """Dispatch one fired room zone event to all registered handlers.
+
+        Handlers run in registration order — ScreenshotHandler must come
+        before EventLogHandler so the stored event carries the snapshot path.
+        """
+        for handler in self._handlers:
+            try:
+                handler.handle_zone_event(event, frame)
+            except Exception:
+                logger.exception(
+                    "Handler %s raised an unhandled exception on a zone event — skipping.",
                     type(handler).__name__,
                 )

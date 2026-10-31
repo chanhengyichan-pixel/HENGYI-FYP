@@ -12,6 +12,7 @@ from alerts.alert_manager import AlertManager
 from alerts.base_handler import BaseHandler
 from core.decision_engine import ComplianceStatus, FrameVerdict
 from core.session_controller import SessionState
+from core.zone_monitor import RESTRICTED_ENTRY, ZoneEvent
 
 IDLE = SessionState.IDLE
 VERDICT = FrameVerdict(status=ComplianceStatus.NO_PERSON)
@@ -27,30 +28,24 @@ class TestAllHandlersCalled:
     def test_single_handler_called(self):
         h = make_handler()
         am = AlertManager([h])
-        am.notify(IDLE, VERDICT, FRAME, worker_name=None)
-        h.handle.assert_called_once_with(IDLE, VERDICT, FRAME, None)
+        am.notify(IDLE, VERDICT, FRAME)
+        h.handle.assert_called_once_with(IDLE, VERDICT, FRAME)
 
     def test_multiple_handlers_all_called(self):
         h1, h2, h3 = make_handler(), make_handler(), make_handler()
         am = AlertManager([h1, h2, h3])
-        am.notify(IDLE, VERDICT, FRAME, worker_name=None)
-        h1.handle.assert_called_once_with(IDLE, VERDICT, FRAME, None)
-        h2.handle.assert_called_once_with(IDLE, VERDICT, FRAME, None)
-        h3.handle.assert_called_once_with(IDLE, VERDICT, FRAME, None)
+        am.notify(IDLE, VERDICT, FRAME)
+        h1.handle.assert_called_once_with(IDLE, VERDICT, FRAME)
+        h2.handle.assert_called_once_with(IDLE, VERDICT, FRAME)
+        h3.handle.assert_called_once_with(IDLE, VERDICT, FRAME)
 
     def test_correct_arguments_forwarded(self):
         h = make_handler()
         am = AlertManager([h])
         verdict = FrameVerdict(status=ComplianceStatus.NON_COMPLIANT,
                                violations=["no-helmet"], person_count=1)
-        am.notify(SessionState.DENIED, verdict, b"fake_frame", worker_name="Alice")
-        h.handle.assert_called_once_with(SessionState.DENIED, verdict, b"fake_frame", "Alice")
-
-    def test_worker_name_defaults_to_none(self):
-        h = make_handler()
-        am = AlertManager([h])
-        am.notify(IDLE, VERDICT, FRAME)  # no worker_name kwarg
-        h.handle.assert_called_once_with(IDLE, VERDICT, FRAME, None)
+        am.notify(SessionState.DENIED, verdict, b"fake_frame")
+        h.handle.assert_called_once_with(SessionState.DENIED, verdict, b"fake_frame")
 
     def test_empty_handler_list_does_not_raise(self):
         am = AlertManager([])
@@ -66,7 +61,7 @@ class TestExceptionIsolation:
         am = AlertManager([bad, good])
         am.notify(IDLE, VERDICT, FRAME)  # must not raise
 
-        good.handle.assert_called_once_with(IDLE, VERDICT, FRAME, None)
+        good.handle.assert_called_once_with(IDLE, VERDICT, FRAME)
 
     def test_exception_is_logged_not_re_raised(self, caplog):
         bad = make_handler()
@@ -90,3 +85,29 @@ class TestExceptionIsolation:
         am.notify(IDLE, VERDICT, FRAME)
 
         h2.handle.assert_called_once()
+
+
+class TestZoneEvents:
+    def test_zone_event_forwarded_to_every_handler_in_order(self):
+        calls = []
+        h1, h2 = make_handler(), make_handler()
+        h1.handle_zone_event.side_effect = lambda e, f: calls.append("h1")
+        h2.handle_zone_event.side_effect = lambda e, f: calls.append("h2")
+        event = ZoneEvent(event_type=RESTRICTED_ENTRY, zone="Z", track_id=3)
+        AlertManager([h1, h2]).notify_zone(event, b"frame")
+        h1.handle_zone_event.assert_called_once_with(event, b"frame")
+        assert calls == ["h1", "h2"]
+
+    def test_zone_handler_raising_does_not_stop_others(self):
+        bad, good = make_handler(), make_handler()
+        bad.handle_zone_event.side_effect = RuntimeError("boom")
+        event = ZoneEvent(event_type=RESTRICTED_ENTRY, zone="Z", track_id=3)
+        AlertManager([bad, good]).notify_zone(event, None)
+        good.handle_zone_event.assert_called_once()
+
+    def test_base_handler_ignores_zone_events_by_default(self):
+        class EntranceOnly(BaseHandler):
+            def handle(self, session_state, frame_verdict, frame):
+                pass
+        EntranceOnly().handle_zone_event(
+            ZoneEvent(event_type=RESTRICTED_ENTRY, zone="Z", track_id=1), None)

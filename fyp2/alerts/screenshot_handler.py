@@ -1,6 +1,7 @@
 """
 ScreenshotHandler — saves a frame to disk when a GRANTED or DENIED
-decision is reached.
+decision is reached, and for every room zone event (HAZARD_PPE,
+RESTRICTED_ENTRY).
 
 Fires exactly once per state entry, not once per frame during the hold.
 
@@ -49,7 +50,7 @@ class ScreenshotHandler(BaseHandler):
         self._screenshot_dir.mkdir(parents=True, exist_ok=True)
         self._last_captured_state = None
 
-    def handle(self, session_state, frame_verdict, frame, worker_name=None) -> None:
+    def handle(self, session_state, frame_verdict, frame) -> None:
         if session_state not in _TRIGGER_STATES:
             # Outside a decision hold — reset so next entry fires.
             self._last_captured_state = None
@@ -72,4 +73,17 @@ class ScreenshotHandler(BaseHandler):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = self._screenshot_dir / f"{timestamp}_{verdict_label}.jpg"
         cv2.imwrite(str(filename), frame)
+        logger.info("Screenshot saved: %s", filename)
+
+    def handle_zone_event(self, event, frame) -> None:
+        """Save the room frame for a zone event and record its path on the event."""
+        if frame is None:
+            logger.warning("ScreenshotHandler: no frame for %s — skipping save.",
+                           event.event_type)
+            return
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = (self._screenshot_dir /
+                    f"{timestamp}_{event.event_type.lower()}_{event.camera}.jpg")
+        cv2.imwrite(str(filename), frame)
+        event.snapshot = str(filename)
         logger.info("Screenshot saved: %s", filename)

@@ -1,8 +1,17 @@
 """
-Thread 1 — AI processing pipeline.
+Entrance AI processing pipeline (PPE ALLOW/DENY check point).
 
-Reads frames from SharedState, runs Detector -> DecisionEngine ->
-SessionController in sequence, and writes results back to SharedState.
+Reads frames from the entrance camera's SharedState, runs Detector ->
+DecisionEngine -> SessionController in sequence, and writes results back
+to SharedState. The room camera has its own pipeline
+(core/room_pipeline.py).
+
+New frames only
+---------------
+Each loop iteration processes a frame only if its frame_id differs from
+the last one processed. On the laptop, inference (~110 cycles/s) is
+faster than the camera (~30 FPS); without this check the same frame was
+run through YOLO several times and counted as several votes.
 
 This loop runs on the CPU-bound inference cycle.  The fps value written
 to shared_state.set_fps() is INFERENCE THROUGHPUT — how many
@@ -60,6 +69,7 @@ The disconnected warning is logged only on the first cycle after
 entering the disconnected state, not every cycle (rate-limiting).
 """
 
+import dataclasses
 import logging
 import threading
 import time
@@ -75,7 +85,7 @@ _FPS_WINDOW = 30  # number of frame timestamps kept for rolling FPS
 class Pipeline:
     def __init__(self, config, shared_state, camera, detector,
                  decision_engine, session_controller, alert_manager=None,
-                 face_recognizer=None):
+                 pose_checker=None):
         self._shared_state = shared_state
         self._detector = detector
         self._decision_engine = decision_engine
@@ -85,7 +95,9 @@ class Pipeline:
         # not re-read every frame, since config does not change at runtime.
         self._decision_debug = bool(config["decision_engine"]["debug"])
         self._alert_manager = alert_manager      # optional; None disables alerts
-        self._face_recognizer = face_recognizer  # optional; None disables identity checks
+        # Optional PoseWearChecker (core/pose_wear_check.py): turns PPE that
+        # is held rather than worn into a violation. None = off.
+        self._pose_checker = pose_checker
 
         self._running = False
         self._thread = None
@@ -93,10 +105,7 @@ class Pipeline:
         self._was_disconnected = False      # tracks transition into disconnected
         self._prev_session_state = None     # tracks last seen state for transition logging
         self._last_fps_log_time: float = 0.0  # monotonic time of last FPS log
-        # Identity captured at session start (IDLE → PERSON_DETECTED).
-        # None means either face recognition is disabled, or no confident
-        # match was found — NOT the same as "different worker".
-        self._session_initial_identity: str | None = None
+        self._last_frame_id = 0               # last frame_id run through the model
 
     def start(self):
         self._running = True
@@ -111,6 +120,20 @@ class Pipeline:
         if self._thread is not None and self._thread.is_alive():
             self._thread.join(timeout=5)
         logger.info("Pipeline stopped.")
+
+    def _alert_verdict(self, session_state, verdict):
+        """During a GRANTED/DENIED hold, give handlers the violations the
+        whole evaluation window agreed on (SessionController.
+        decision_violations) instead of this single frame's — so the voice
+        prompt and the event log name what was really missing."""
+        if session_state not in (SessionState.GRANTED, SessionState.DENIED):
+            return verdict
+        violations = getattr(self._session_controller, "decision_violations", None)
+        if not isinstance(violations, list):
+            return verdict
+        if session_state is SessionState.DENIED and not violations:
+            violations = list(verdict.violations) or ["no-helmet", "no-vest"]
+        return dataclasses.replace(verdict, violations=violations)
 
     def _loop(self):
         while self._running:
@@ -130,16 +153,20 @@ class Pipeline:
                 logger.info("Camera reconnected — pipeline resuming inference.")
                 self._was_disconnected = False
 
-            frame = self._shared_state.get_frame()
-            if frame is None:
-                # Camera not yet producing frames — yield and retry.
+            frame, frame_id = self._shared_state.get_frame_with_id()
+            if frame is None or frame_id == self._last_frame_id:
+                # No frame yet, or no NEW frame since the last cycle —
+                # yield and retry.
                 time.sleep(0.005)
                 continue
+            self._last_frame_id = frame_id
 
             t_start = time.monotonic()
 
             detections = self._detector.detect(frame)
             verdict = self._decision_engine.evaluate(detections, debug=self._decision_debug)
+            if self._pose_checker is not None:
+                verdict = self._pose_checker.check(frame, verdict)
 
             # Diagnostic overlay data — only ever non-None when debug is on
             # (see core/decision_engine.py). Written unconditionally (cheap
@@ -147,68 +174,15 @@ class Pipeline:
             # value to read rather than stale data from a previous run.
             self._shared_state.set_latest_debug_info(verdict.debug_info)
 
-            # Check BEFORE update() whether this frame will complete the
-            # evaluation window — after update() the state is already
-            # GRANTED/DENIED and the window is gone.
-            is_final_eval_frame = (
-                self._face_recognizer is not None
-                and self._session_controller.is_last_evaluating_frame
-            )
-
             session_state = self._session_controller.update(verdict)
-
-            # Identity check 1 — session opening: IDLE → PERSON_DETECTED.
-            # Capture who we think is entering; None is valid (face not visible).
-            if (self._face_recognizer is not None
-                    and self._prev_session_state is SessionState.IDLE
-                    and session_state is SessionState.PERSON_DETECTED):
-                result = self._face_recognizer.identify(frame)
-                self._session_initial_identity = result[0] if result else None
-                self._shared_state.set_worker_name(
-                    self._session_initial_identity or "unknown"
-                )
-                logger.info("Session opening identity: %s",
-                            self._session_initial_identity or "unknown")
-
-            # Identity check 2 — session closing: last evaluating frame.
-            # If both checks returned a confident (non-None) name AND they
-            # differ, a worker swap occurred with no NO_PERSON gap between
-            # them.  Invalidate by resetting the session to IDLE.
-            # "None" on either side means "could not identify" — that is NOT
-            # evidence of a swap; do not invalidate on ambiguity alone.
-            if is_final_eval_frame and session_state in (
-                SessionState.GRANTED, SessionState.DENIED
-            ):
-                result = self._face_recognizer.identify(frame)
-                closing_identity = result[0] if result else None
-                if (self._session_initial_identity is not None
-                        and closing_identity is not None
-                        and self._session_initial_identity != closing_identity):
-                    logger.warning(
-                        "Worker swap detected (%s → %s) — invalidating session.",
-                        self._session_initial_identity, closing_identity,
-                    )
-                    self._session_controller.reset()
-                    session_state = SessionState.IDLE
-                    self._session_initial_identity = None
-                    self._shared_state.set_worker_name("unknown")
-
-            # Clear stored identity when session returns to IDLE from any
-            # active state (normal cooldown path, mid-evaluation abort, etc.).
-            if (session_state is SessionState.IDLE
-                    and self._prev_session_state not in (None, SessionState.IDLE)):
-                self._session_initial_identity = None
-                if self._face_recognizer is not None:
-                    self._shared_state.set_worker_name("unknown")
 
             self._shared_state.set_latest_detections(detections)
             self._shared_state.set_session_state(session_state)
 
             if self._alert_manager is not None:
-                self._alert_manager.notify(
-                    session_state, verdict, frame,
-                    worker_name=self._session_initial_identity,
-                )
+                self._alert_manager.notify(session_state,
+                                           self._alert_verdict(session_state, verdict),
+                                           frame)
 
             # Log session state transitions (only on change, not every frame).
             if session_state != self._prev_session_state:

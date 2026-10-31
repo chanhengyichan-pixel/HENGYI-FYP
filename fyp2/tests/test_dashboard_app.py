@@ -100,3 +100,85 @@ class TestDebugOverlayDrawing:
         assert mock_cv2.rectangle.call_count == 3
         # one marker per PPE candidate (1 helmet + 1 vest)
         assert mock_cv2.drawMarker.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Flask routes (two cameras, zone overlay, events API)
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace
+
+from core.shared_state import SharedState
+from core.zones import Zone
+from dashboard.app import _draw_room_detections, _draw_zones, create_app
+from storage.event_store import EventStore
+
+
+def _app(tmp_path, with_room=True):
+    shots = tmp_path / "shots"
+    shots.mkdir(exist_ok=True)
+    config = {"decision_engine": {"debug_overlay": False},
+              "alerts": {"screenshot_dir": str(shots)}}
+    store = EventStore({"storage": {"db_path": str(tmp_path / "e.db")}})
+    store.append({"timestamp": "2026-10-30 10:00:00", "verdict": "violation",
+                  "violations": [], "event_type": "RESTRICTED_ENTRY", "camera": "room",
+                  "zone": "Server", "severity": "critical", "snapshot": None})
+    states = {"entrance": SharedState(), "room": SharedState() if with_room else None}
+    zones = [Zone("Server", "restricted", ((340, 200), (640, 200), (640, 480), (340, 480)))]
+    return create_app(config, states, store, zones=zones).test_client(), states
+
+
+class TestRoutes:
+    def test_status_includes_room_block(self, tmp_path):
+        client, states = _app(tmp_path)
+        states["room"].set_zone_status([{"track_id": 1, "zone": "Server",
+                                         "zone_type": "restricted", "seconds": 0.5,
+                                         "ppe_ok": True, "violations": []}])
+        data = client.get("/api/status").get_json()
+        assert data["room"]["enabled"] is True
+        assert data["room"]["zone_status"][0]["zone"] == "Server"
+        assert data["recent_events"][0]["event_type"] == "RESTRICTED_ENTRY"
+
+    def test_status_room_disabled(self, tmp_path):
+        client, _ = _app(tmp_path, with_room=False)
+        assert client.get("/api/status").get_json()["room"] == {"enabled": False}
+
+    def test_room_feed_404_when_disabled(self, tmp_path):
+        client, _ = _app(tmp_path, with_room=False)
+        assert client.get("/video_feed/room").status_code == 404
+
+    def test_events_filter_by_type(self, tmp_path):
+        client, _ = _app(tmp_path)
+        data = client.get("/api/events?type=ENTRY_DENIED").get_json()
+        assert data["events"] == []
+        data = client.get("/api/events?type=RESTRICTED_ENTRY").get_json()
+        assert len(data["events"]) == 1
+
+    def test_index_shows_room_panel_only_when_enabled(self, tmp_path):
+        client, _ = _app(tmp_path)
+        assert b"/video_feed/room" in client.get("/").data
+        client, _ = _app(tmp_path, with_room=False)
+        assert b"/video_feed/room" not in client.get("/").data
+
+    def test_snapshot_route_serves_screenshot(self, tmp_path):
+        client, _ = _app(tmp_path)
+        (tmp_path / "shots" / "a.jpg").write_bytes(b"jpg")
+        assert client.get("/snapshots/a.jpg").data == b"jpg"
+
+    def test_snapshot_route_cannot_escape_directory(self, tmp_path):
+        # e.db lives one level above the screenshot directory.
+        client, _ = _app(tmp_path)
+        assert client.get("/snapshots/../e.db").status_code == 404
+
+
+class TestRoomOverlay:
+    def test_draw_zones_and_people_does_not_raise(self):
+        frame = _fake_frame()
+        zones = [Zone("Server", "restricted", ((340, 200), (640, 200), (640, 480), (340, 480)))]
+        status = [{"track_id": 3, "zone": "Server", "zone_type": "restricted",
+                   "seconds": 1.2, "ppe_ok": True, "violations": []}]
+        dets = [SimpleNamespace(class_name="person", confidence=0.9, x1=450, y1=50,
+                                x2=550, y2=400, track_id=3)]
+        _draw_zones(frame, zones, status)
+        _draw_room_detections(frame, dets, status)
+        assert frame.any()

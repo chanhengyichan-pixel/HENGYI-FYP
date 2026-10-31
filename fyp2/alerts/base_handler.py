@@ -3,12 +3,16 @@ Abstract base class for all alert handlers.
 
 Contract
 --------
-Every handler implements a single method:
+Every handler implements:
 
-    handle(session_state, frame_verdict, frame, worker_name) -> None
+    handle(session_state, frame_verdict, frame) -> None
 
-Parameters
-----------
+and may override:
+
+    handle_zone_event(event, frame) -> None      (default: do nothing)
+
+handle() — entrance check point
+-------------------------------
 session_state : SessionState
     The current session controller state at the time of the alert call.
     Handlers use this to decide whether to act (e.g. only on GRANTED/DENIED).
@@ -18,26 +22,29 @@ frame_verdict : FrameVerdict
     violation details (e.g. which PPE was missing) read it from here.
 
 frame : numpy.ndarray | None
-    The current BGR camera frame, as returned by shared_state.get_frame().
-    May be None if the camera has not yet produced a frame.  Handlers that
-    save or display the frame must check for None before use.
+    The current BGR camera frame.  May be None if the camera has not yet
+    produced a frame.  Handlers that save or display the frame must check
+    for None before use.
 
-Parameters (continued)
-----------------------
-worker_name : str | None
-    The confidently identified worker for the current session, as
-    determined by FaceRecognizer at session opening (IDLE →
-    PERSON_DETECTED transition).  None means "identity unknown" —
-    either face recognition is not configured, no enrolled worker
-    matched, or the face was not visible at the identity check.
-    None does NOT mean "no person present"; that is expressed by
-    session_state being IDLE or NO_PERSON in the verdict.
+handle_zone_event() — room camera
+---------------------------------
+event : core.zone_monitor.ZoneEvent
+    A HAZARD_PPE or RESTRICTED_ENTRY event that fired on this frame.
+    Called once per event (ZoneMonitor already applies the per-person
+    cooldown), so handlers do not need their own debounce here.
+    The event is mutable: ScreenshotHandler sets event.snapshot, which
+    EventLogHandler (registered after it) stores.
+
+frame : numpy.ndarray
+    The room camera frame the event fired on.
 
 Design notes
 ------------
-- Handlers are called on EVERY pipeline loop iteration (not just on
+- handle() is called on EVERY entrance pipeline iteration (not just on
   session_state transitions).  Each handler is responsible for its own
   debounce / rate-limiting logic if it should not fire every frame.
+- The entrance and room pipelines run in different threads, so a handler
+  that keeps state shared by both methods must guard it with a lock.
 - One handler raising an exception must NOT prevent others from running.
   AlertManager catches and logs per-handler exceptions.
 """
@@ -47,5 +54,8 @@ from abc import ABC, abstractmethod
 
 class BaseHandler(ABC):
     @abstractmethod
-    def handle(self, session_state, frame_verdict, frame, worker_name) -> None:
-        """Process one pipeline cycle's worth of state."""
+    def handle(self, session_state, frame_verdict, frame) -> None:
+        """Process one entrance pipeline cycle's worth of state."""
+
+    def handle_zone_event(self, event, frame) -> None:
+        """Process one fired room zone event. Default: ignore."""

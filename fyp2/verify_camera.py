@@ -1,14 +1,17 @@
 """
-Smoke-test for Step 3: CameraCapture + SharedState.
+Smoke-test: CameraCapture + SharedState.
 
-Starts the camera, waits for a frame, saves it to output/camera_test.jpg,
-then stops cleanly. No display window is opened.
+Starts one configured camera, waits for a frame, saves it to
+output/camera_test.jpg (or output/camera_test_room.jpg), then stops
+cleanly. No display window is opened — works over SSH on the Pi.
 
 Run from the fyp2/ directory:
-    python verify_camera.py
+    python verify_camera.py            # entrance camera
+    python verify_camera.py room       # room camera
 """
 
 import logging
+import sys
 import time
 from pathlib import Path
 
@@ -26,9 +29,10 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    name = sys.argv[1] if len(sys.argv) > 1 else "entrance"
     config = load_config()
     state = SharedState()
-    camera = CameraCapture(config, state)
+    camera = CameraCapture(config["cameras"][name], state, name=name)
 
     try:
         camera.start()
@@ -47,7 +51,8 @@ def main():
             logger.error("No frame received within 3 seconds.")
             return
 
-        out_path = Path("output/camera_test.jpg")
+        suffix = "" if name == "entrance" else f"_{name}"
+        out_path = Path(f"output/camera_test{suffix}.jpg")
         out_path.parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(out_path), frame)
         logger.info("Frame saved to %s (shape=%s)", out_path, frame.shape)

@@ -1,28 +1,32 @@
 """
-EventLogHandler — records GRANTED/DENIED decision events to the
-SQLite-backed EventStore.
+EventLogHandler — records events to the SQLite-backed EventStore.
+
+Two sources:
+  handle()            — entrance GRANTED/DENIED decisions (debounced: once
+                        per state entry, same pattern as ScreenshotHandler)
+  handle_zone_event() — room HAZARD_PPE / RESTRICTED_ENTRY events (already
+                        rate-limited per person by ZoneMonitor's cooldown)
 
 Implemented as a BaseHandler so it slots into the AlertManager
-dispatcher alongside ScreenshotHandler and VoiceHandler.  "Record this
-decision" is semantically identical to "screenshot this decision" —
-keeping it as a handler means zero pipeline.py changes and the same
-fan-out guarantee (exception in one handler doesn't prevent others).
+dispatcher alongside ScreenshotHandler, VoiceHandler and LedHandler —
+same fan-out guarantee (an exception in one handler doesn't prevent
+others).
 
-Debounce: identical to ScreenshotHandler._last_captured_state — records
-once per state entry, resets on any non-trigger state.
-
-Event format stored:
+Event format stored (see storage/event_store.py):
     {
-        "timestamp":   "2026-07-09 07:15:12",  # local time, human-readable
-        "verdict":     "granted" | "denied",
-        "violations":  [],                      # from frame_verdict.violations
-        "worker_name": "Alice" | "unknown",     # None coerced to "unknown"
+        "timestamp":  "2026-07-09 07:15:12",   # local time, human-readable
+        "event_type": "ENTRY_GRANTED" | "ENTRY_DENIED"
+                      | "HAZARD_PPE" | "RESTRICTED_ENTRY",
+        "verdict":    "granted" | "denied" | "violation",
+        "camera":     "entrance" | "room",
+        "zone":       None | "Machine area" | ...,
+        "severity":   "info" | "warning" | "high" | "critical",
+        "violations": ["no-helmet", ...],
+        "snapshot":   None | "output/screenshots/....jpg",
     }
 
-worker_name coercion: None (unidentified / face recognition not configured)
-is stored as the string "unknown" for display consistency.  The distinction
-between "face recognition off" and "face visible but no match" is not
-preserved at the storage layer — both appear as "unknown" in the event log.
+No personal data is stored: there is no worker name or face data, only
+what happened, where, and when.
 """
 
 import logging
@@ -35,14 +39,22 @@ logger = logging.getLogger(__name__)
 
 _TRIGGER_STATES = {SessionState.GRANTED, SessionState.DENIED}
 
+_ENTRANCE_EVENT = {
+    SessionState.GRANTED: ("ENTRY_GRANTED", "info"),
+    SessionState.DENIED:  ("ENTRY_DENIED", "warning"),
+}
+
+
+def _now() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
 
 class EventLogHandler(BaseHandler):
     def __init__(self, event_store):
         self._event_store = event_store
         self._last_recorded_state = None
 
-    def handle(self, session_state, frame_verdict, frame,
-               worker_name: str | None = None) -> None:
+    def handle(self, session_state, frame_verdict, frame) -> None:
         if session_state not in _TRIGGER_STATES:
             self._last_recorded_state = None
             return
@@ -51,12 +63,31 @@ class EventLogHandler(BaseHandler):
             return  # debounce
 
         self._last_recorded_state = session_state
+        event_type, severity = _ENTRANCE_EVENT[session_state]
 
         event = {
-            "timestamp":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "verdict":     session_state.value,
-            "violations":  list(frame_verdict.violations),
-            "worker_name": worker_name if worker_name is not None else "unknown",
+            "timestamp":  _now(),
+            "event_type": event_type,
+            "verdict":    session_state.value,
+            "camera":     "entrance",
+            "zone":       None,
+            "severity":   severity,
+            "violations": list(frame_verdict.violations),
+            "snapshot":   None,
         }
         self._event_store.append(event)
         logger.info("Event logged: %s", event)
+
+    def handle_zone_event(self, event, frame) -> None:
+        record = {
+            "timestamp":  _now(),
+            "event_type": event.event_type,
+            "verdict":    "violation",
+            "camera":     event.camera,
+            "zone":       event.zone,
+            "severity":   event.severity,
+            "violations": list(event.violations),
+            "snapshot":   event.snapshot,
+        }
+        self._event_store.append(record)
+        logger.info("Event logged: %s", record)

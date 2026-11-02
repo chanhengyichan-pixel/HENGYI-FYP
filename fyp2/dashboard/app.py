@@ -6,6 +6,9 @@ import cv2
 import numpy as np
 from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory
 
+from dashboard.auth import init_auth
+from dashboard.zone_editor import init_zone_editor
+
 logger = logging.getLogger(__name__)
 
 _FRAME_INTERVAL = 1.0 / 30  # cap stream at 30 FPS
@@ -123,6 +126,38 @@ def _draw_detections(frame, detections):
         )
 
 
+def _missing_text(violations) -> str:
+    """['no-helmet', 'no-vest'] -> 'no helmet & vest'."""
+    h, v = "no-helmet" in violations, "no-vest" in violations
+    return "no helmet & vest" if h and v else "no helmet" if h else "no vest" if v else ""
+
+
+def _zone_tag(frame, name, pts, color):
+    """Zone name as a solid tag (zone colour, contrasting text) centred in
+    the zone, so it stays readable on any background and labels of
+    neighbouring zones do not run into each other."""
+    font = cv2.FONT_HERSHEY_DUPLEX
+    scale = max(0.45, frame.shape[1] / 1100)
+    thick = 1 if scale < 0.8 else 2
+    zone_w = pts[:, 0].max() - pts[:, 0].min()
+    (tw, th), base = cv2.getTextSize(name, font, scale, thick)
+    if tw > 0.85 * zone_w:  # shrink to fit inside the zone
+        scale = max(0.3, scale * 0.85 * zone_w / tw)
+        (tw, th), base = cv2.getTextSize(name, font, scale, thick)
+    # Centre of the bounding box, not the vertex average: a zone drawn with
+    # extra or doubled corners would pull the vertex average to one side.
+    cx = (pts[:, 0].min() + pts[:, 0].max()) / 2
+    cy = (pts[:, 1].min() + pts[:, 1].max()) / 2
+    pad = 3
+    x1, y1 = int(cx - tw / 2) - pad, int(cy - th / 2) - pad
+    x2, y2 = x1 + tw + 2 * pad, y1 + th + base + 2 * pad
+    cv2.rectangle(frame, (x1, y1), (x2, y2), color, -1)
+    # Dark text on light colours (amber), white text on dark ones (red).
+    text = (0, 0, 0) if sum(color) > 380 else (255, 255, 255)
+    cv2.putText(frame, name, (x1 + pad, y1 + pad + th), font, scale, text,
+                thick, cv2.LINE_AA)
+
+
 def _draw_zones(frame, zones, zone_status):
     """
     Room camera overlay: translucent zone polygons with their names, and
@@ -140,9 +175,7 @@ def _draw_zones(frame, zones, zone_status):
             pts = np.array(z.polygon, dtype=np.int32)
             color = _ZONE_COLOR.get(z.type, _DEFAULT_COLOR)
             cv2.polylines(frame, [pts], True, color, 2)
-            x, y = pts[0]
-            cv2.putText(frame, f"{z.name} ({z.type})", (int(x) + 4, int(y) + 16),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+            _zone_tag(frame, z.name, pts, color)
 
     for st in zone_status:
         st["_color"] = ((0, 200, 0) if st["zone_type"] == "hazard" and st["ppe_ok"]
@@ -162,23 +195,52 @@ def _draw_room_detections(frame, detections, zone_status):
         cv2.rectangle(frame, (d.x1, d.y1), (d.x2, d.y2), color, 2)
         label = f"#{d.track_id}" if d.track_id is not None else "person"
         if st:
-            label += f" {st['zone']} {st['seconds']:.1f}s"
-        # Box touching the top of the image: draw the label inside it.
-        label_y = d.y1 - 6 if d.y1 > 16 else d.y1 + 16
-        cv2.putText(frame, label, (d.x1 + 2, label_y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
+            missing = _missing_text(st.get("violations") or [])
+            if st["zone_type"] == "hazard" and missing:
+                label += f" {missing} {st['seconds']:.1f}s"
+            elif st["zone_type"] != "hazard":
+                label += f" NO ENTRY {st['seconds']:.1f}s"
+        font, scale = cv2.FONT_HERSHEY_DUPLEX, max(0.4, frame.shape[1] / 1300)
+        (tw, th), base = cv2.getTextSize(label, font, scale, 1)
+        # Solid tag above the box; inside the box when it touches the top.
+        y2 = d.y1 if d.y1 > th + base + 6 else d.y1 + th + base + 6
+        y1 = y2 - th - base - 6
+        cv2.rectangle(frame, (d.x1, y1), (d.x1 + tw + 6, y2), color, -1)
+        text = (0, 0, 0) if sum(color) > 380 else (255, 255, 255)
+        cv2.putText(frame, label, (d.x1 + 3, y2 - base - 3), font, scale, text, 1, cv2.LINE_AA)
         cv2.circle(frame, ((d.x1 + d.x2) // 2, d.y2), 4, color, -1)  # foot point
 
 
-def create_app(config: dict, states: dict, event_store, zones=None):
+def create_app(config: dict, states: dict, event_store, zones=None, user_store=None,
+               zone_monitor=None):
     """
-    states : {"entrance": SharedState, "room": SharedState | None}
-    zones  : list of core.zones.Zone drawn on the room stream
+    states     : {"entrance": SharedState, "room": SharedState | None}
+    zones      : list of core.zones.Zone drawn on the room stream (static;
+                 ignored when zone_monitor is given)
+    zone_monitor : the running ZoneMonitor; zones are read from it every
+                 frame and the Settings > Room zones editor updates it live
+    user_store : storage.user_store.UserStore (dashboard accounts); created
+                 from config when not given
     """
     app = Flask(__name__)
-    zones = zones or []
+    if user_store is None:
+        from storage.user_store import UserStore
+        user_store = UserStore(config)
+    init_auth(app, config, user_store)
+    static_zones = zones or []
+
+    def current_zones():
+        return zone_monitor.zones if zone_monitor is not None else static_zones
+
+    def apply_zones(new_zones):
+        if zone_monitor is not None:
+            zone_monitor.set_zones(new_zones)
+        else:
+            static_zones[:] = new_zones
+
     entrance = states["entrance"]
     room = states.get("room")
+    init_zone_editor(app, config, room, current_zones, apply_zones)
     screenshot_dir = Path(config["alerts"]["screenshot_dir"]).resolve()
 
     # Calibration/diagnostic flag — see config.yaml's decision_engine
@@ -201,7 +263,7 @@ def create_app(config: dict, states: dict, event_store, zones=None):
             detections = state.get_latest_detections()
             if camera == "room":
                 zone_status = state.get_zone_status()
-                _draw_zones(frame, zones, zone_status)
+                _draw_zones(frame, current_zones(), zone_status)
                 _draw_room_detections(frame, detections, zone_status)
             else:
                 _draw_detections(frame, detections)
@@ -240,6 +302,10 @@ def create_app(config: dict, states: dict, event_store, zones=None):
             "camera_status": entrance.get_camera_status(),
             "fps": round(entrance.get_fps(), 1),
             "recent_events": event_store.get_recent(10),
+            # Separate lists so the dashboard shows entrance decisions and
+            # room violations in their own panels.
+            "entrance_events": event_store.get_recent(10, camera="entrance"),
+            "room_events": event_store.get_recent(10, camera="room"),
             "detections": [
                 {"class_name": d.class_name, "confidence": round(d.confidence, 2)}
                 for d in detections
@@ -254,7 +320,7 @@ def create_app(config: dict, states: dict, event_store, zones=None):
                 "fps": round(room.get_fps(), 1),
                 "persons": sum(1 for d in room_dets if d.class_name == "person"),
                 "zone_status": room.get_zone_status(),
-                "zones": [{"name": z.name, "type": z.type} for z in zones],
+                "zones": [{"name": z.name, "type": z.type} for z in current_zones()],
             }
         return jsonify(status)
 
@@ -269,6 +335,19 @@ def create_app(config: dict, states: dict, event_store, zones=None):
     @app.route("/api/stats")
     def api_stats():
         return jsonify(event_store.get_stats())
+
+    @app.route("/statistics")
+    def statistics():
+        return render_template("statistics.html", room_enabled=room is not None)
+
+    @app.route("/api/summary")
+    def api_summary():
+        # ?days=1 (today), 7, 30; 0 = all time
+        try:
+            days = max(0, min(365, int(request.args.get("days", 7))))
+        except (TypeError, ValueError):
+            days = 7
+        return jsonify(event_store.get_summary(days or None))
 
     @app.route("/api/events")
     def api_events():

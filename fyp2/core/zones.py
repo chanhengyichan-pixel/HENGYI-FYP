@@ -68,3 +68,80 @@ def load_zones(config: dict) -> list[Zone]:
             raise ValueError(f"Zone '{area['name']}': polygon needs at least 3 points")
         zones.append(Zone(name=str(area["name"]), type=ztype, polygon=polygon))
     return zones
+
+
+# ---------------------------------------------------------------------------
+# Zones drawn on the dashboard (Settings > Room zones) are saved to a JSON
+# file, which then takes precedence over config.yaml's zones.areas. This
+# lets an admin redraw zones for a new camera position without editing
+# config files or restarting.
+# ---------------------------------------------------------------------------
+
+MAX_ZONES = 10
+MAX_POINTS = 20
+
+
+def zones_file(config: dict) -> str:
+    return config.get("zones", {}).get("file", "output/zones.json")
+
+
+def zones_from_areas(areas) -> list[Zone]:
+    """Validate a list of {"name", "type", "polygon"} dicts (from the web
+    editor or a saved file). Raises ValueError with a readable message."""
+    if not isinstance(areas, list):
+        raise ValueError("Zones must be a list")
+    if len(areas) > MAX_ZONES:
+        raise ValueError(f"At most {MAX_ZONES} zones")
+    zones, names = [], set()
+    for i, area in enumerate(areas, 1):
+        try:
+            name = str(area["name"]).strip()
+            ztype = area["type"]
+            pts = area["polygon"]
+        except (KeyError, TypeError):
+            raise ValueError(f"Zone {i}: needs name, type and polygon") from None
+        if not name or len(name) > 40:
+            raise ValueError(f"Zone {i}: name must be 1-40 characters")
+        if name.lower() in names:
+            raise ValueError(f"Zone name '{name}' is used twice")
+        names.add(name.lower())
+        if ztype not in _ZONE_TYPES:
+            raise ValueError(f"Zone '{name}': type must be hazard or restricted")
+        try:
+            polygon = tuple((round(float(x), 1), round(float(y), 1)) for x, y in pts)
+        except (TypeError, ValueError):
+            raise ValueError(f"Zone '{name}': bad polygon points") from None
+        if not 3 <= len(polygon) <= MAX_POINTS:
+            raise ValueError(f"Zone '{name}': needs 3-{MAX_POINTS} points")
+        zones.append(Zone(name=name, type=ztype, polygon=polygon))
+    return zones
+
+
+def zones_to_areas(zones) -> list[dict]:
+    return [{"name": z.name, "type": z.type, "polygon": [list(p) for p in z.polygon]}
+            for z in zones]
+
+
+def load_active_zones(config: dict) -> tuple[list[Zone], str]:
+    """Zones the system should use, and where they came from:
+    the saved web-editor file if it exists, else config.yaml."""
+    import json
+    import os
+    path = zones_file(config)
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return zones_from_areas(json.load(f)["zones"]), path
+    return load_zones(config), "config.yaml"
+
+
+def save_zones(config: dict, zones) -> str:
+    """Write zones to the JSON file atomically; return the path."""
+    import json
+    import os
+    path = zones_file(config)
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"zones": zones_to_areas(zones)}, f, indent=2)
+    os.replace(tmp, path)
+    return path

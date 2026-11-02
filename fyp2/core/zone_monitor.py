@@ -20,6 +20,14 @@ Rules (per person track, per zone)
 detection, occlusion, a PPE flicker) for up to grace_seconds without their
 timer restarting. Longer than that and the timer starts again from zero.
 
+Flicker filter (hazard)
+-----------------------
+Far from the camera a worn helmet can drop out of detection for a frame
+or two. The grace period bridges those gaps, so on its own a flickering
+helmet could add up to a false HAZARD_PPE. hazard_min_missing_ratio
+(e.g. 0.7) requires PPE to be missing in at least that share of the
+frames since the timer started. 0 (default) disables the filter.
+
 Cooldown
 --------
 After an event fires, the same track does not raise the same event type
@@ -68,6 +76,8 @@ class ZoneEvent:
 class _Timer:
     start: float
     last_seen: float
+    bad: int = 0    # frames in this run where the condition held (PPE missing / inside)
+    good: int = 0   # hazard only: frames in this run where PPE looked fine
 
 
 class ZoneMonitor:
@@ -78,6 +88,10 @@ class ZoneMonitor:
         self._restricted_seconds = float(zcfg["restricted_seconds"])
         self._grace_seconds = float(zcfg["grace_seconds"])
         self._cooldown_seconds = float(zcfg["cooldown_seconds"])
+        # Hazard: share of frames in the run that must show PPE missing.
+        # Far from the camera a worn helmet can flicker out for a frame or
+        # two; without this, those flickers add up to a false alarm.
+        self._min_missing_ratio = float(zcfg.get("hazard_min_missing_ratio", 0.0))
         self._zones = zones if zones is not None else load_zones(config)
         self._clock = clock
 
@@ -89,6 +103,13 @@ class ZoneMonitor:
     @property
     def zones(self) -> list[Zone]:
         return list(self._zones)
+
+    def set_zones(self, zones: list[Zone]) -> None:
+        """Swap in new zones (from the dashboard editor) while running.
+        Timers belong to the old zones, so they are dropped; cooldowns are
+        kept so a person standing still does not get a second alert."""
+        self._zones = list(zones)
+        self._timers = {}
 
     def update(self, detections, verdict) -> tuple[list[ZoneEvent], list[dict]]:
         """
@@ -102,6 +123,7 @@ class ZoneMonitor:
         """
         now = self._clock()
         ppe_by_box = self._ppe_by_person_box(verdict)
+        zones = self._zones  # one consistent set for this frame (editor may swap it)
 
         events: list[ZoneEvent] = []
         status: list[dict] = []
@@ -113,12 +135,16 @@ class ZoneMonitor:
             ppe_ok = not violations
             point = foot_point(det)
 
-            for zone in self._zones:
+            for zone in zones:
                 if not zone.contains(point):
                     continue
 
                 if zone.type == HAZARD and ppe_ok:
-                    # Inside a hazard zone but correctly equipped: fine.
+                    # Inside a hazard zone but correctly equipped: fine. A
+                    # running "missing PPE" timer counts this frame against it.
+                    t = self._timers.get((det.track_id, zone.name))
+                    if t is not None and now - t.last_seen <= self._grace_seconds:
+                        t.good += 1
                     status.append(self._status(det, zone, 0.0, ppe_ok, violations))
                     continue
 
@@ -128,6 +154,7 @@ class ZoneMonitor:
                     timer = _Timer(start=now, last_seen=now)
                     self._timers[key] = timer
                 timer.last_seen = now
+                timer.bad += 1
                 held = now - timer.start
                 status.append(self._status(det, zone, held, ppe_ok, violations))
 
@@ -136,7 +163,9 @@ class ZoneMonitor:
                 else:
                     event_type, needed = RESTRICTED_ENTRY, self._restricted_seconds
 
-                if held >= needed and self._cooldown_over(det.track_id, event_type, now):
+                ratio_ok = (zone.type != HAZARD
+                            or timer.bad / (timer.bad + timer.good) >= self._min_missing_ratio)
+                if held >= needed and ratio_ok and self._cooldown_over(det.track_id, event_type, now):
                     self._last_fired[(det.track_id, event_type)] = now
                     events.append(ZoneEvent(
                         event_type=event_type,

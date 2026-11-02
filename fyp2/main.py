@@ -28,6 +28,7 @@ from core.pipeline import Pipeline
 from core.pose_wear_check import PoseWearChecker
 from core.room_pipeline import RoomPipeline
 from core.zone_monitor import ZoneMonitor
+from core.zones import load_active_zones
 from alerts.alert_manager import AlertManager
 from alerts.screenshot_handler import ScreenshotHandler
 from alerts.voice_handler import VoiceHandler
@@ -79,7 +80,9 @@ def run(config: dict) -> None:
     zone_monitor = None
     if room_cfg.get("enabled", False):
         states["room"] = SharedState()
-        zone_monitor = ZoneMonitor(config)
+        zones, source = load_active_zones(config)
+        logger.info("Room zones: %d loaded from %s", len(zones), source)
+        zone_monitor = ZoneMonitor(config, zones=zones)
         cam = CameraCapture(room_cfg, states["room"], name="room")
         cameras.append(cam)
         # Separate Detector instance: tracker state must not mix cameras.
@@ -106,8 +109,7 @@ def run(config: dict) -> None:
     for p in pipelines:
         p.start()
 
-    app = create_app(config, states, event_store,
-                     zones=zone_monitor.zones if zone_monitor else [])
+    app = create_app(config, states, event_store, zone_monitor=zone_monitor)
 
     dash = config["dashboard"]
     logger.info("Starting dashboard on http://%s:%d", dash["host"], dash["port"])

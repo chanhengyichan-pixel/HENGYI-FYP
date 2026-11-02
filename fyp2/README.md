@@ -57,6 +57,27 @@ python scripts/zone_picker.py videos/room_test.mp4
 
 and paste the printed polygons into `zones.areas`.
 
+## Dashboard login
+
+The dashboard needs a login (`dashboard.auth: true` in the config).
+
+- First start, no accounts yet: opening the dashboard shows **Create the first admin account**.
+- Roles: **admin** (everything, plus Settings: add/delete accounts, reset passwords) and **viewer** (live view and history only).
+- Accounts are stored in the same SQLite file as the events, passwords only as salted hashes. The session key is generated once in `output/.dashboard_secret`.
+- Forgot the only admin password: stop `main.py` and run
+  `sqlite3 output/events.db "DELETE FROM users"`, then start again and create a new admin.
+- The login only covers the web page. Detection, LEDs and voice alerts run without it.
+
+## Drawing room zones
+
+Admins draw zones in the dashboard: **Settings > Room camera zones** (only the room camera has zones; the entrance camera always checks the person at the checkpoint).
+
+- Click **+ New zone**, click the corners on the floor, then **Finish shape** (or click the first point). Name it and pick Hazard or Restricted.
+- Drag a corner to adjust it, right-click a corner to remove it.
+- **Save and apply** writes `output/zones.json` and the room camera uses the new zones straight away (no restart).
+- `output/zones.json` takes precedence over `zones.areas` in config.yaml. Delete the file to go back to the config.yaml zones.
+- Redraw the zones whenever the room camera is moved. `scripts/zone_picker.py` still works for drawing without the dashboard.
+
 ## Raspberry Pi setup (Pi 4 or Pi 5, Raspberry Pi OS 64-bit Bookworm)
 
 ```bash

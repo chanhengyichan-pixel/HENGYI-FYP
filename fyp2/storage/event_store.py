@@ -86,6 +86,7 @@ _COLUMNS = f"""timestamp, verdict, violations, {_EVENT_TYPE_EXPR},
 _SELECT_RECENT = f"""
 SELECT {_COLUMNS}
 FROM events
+WHERE (? IS NULL OR COALESCE(camera, 'entrance') = ?)
 ORDER BY timestamp DESC, id DESC
 LIMIT ?
 """
@@ -129,6 +130,18 @@ WHERE zone IS NOT NULL
 GROUP BY zone
 ORDER BY cnt DESC
 """
+
+_SELECT_SINCE = f"""
+SELECT timestamp, {_EVENT_TYPE_EXPR}, violations, zone
+FROM events
+WHERE (? IS NULL OR timestamp >= ?)
+"""
+
+
+def _missing_key(violations) -> str:
+    h, v = "no-helmet" in violations, "no-vest" in violations
+    return "both" if h and v else "helmet" if h else "vest" if v else "none"
+
 
 _EMPTY_STATS = {"total_events": 0, "granted_count": 0, "denied_count": 0,
                 "hazard_count": 0, "restricted_count": 0,
@@ -207,6 +220,84 @@ class EventStore:
             "zone_counts":      {r[0]: r[1] for r in zone_rows},
         }
 
+    def get_summary(self, days: int | None = 7, today: str | None = None) -> dict:
+        """Numbers for the Statistics page over the last `days` days
+        (including today; None = all time).
+
+        `today` ("YYYY-MM-DD") is for tests; defaults to the local date.
+        Rows are aggregated in Python: one period holds at most a few
+        thousand events, which is trivial even on a Pi.
+        """
+        import datetime as _dt
+        day0 = _dt.date.fromisoformat(today) if today else _dt.date.today()
+        since = None
+        if days:
+            since = (day0 - _dt.timedelta(days=days - 1)).isoformat()
+        with self._lock:
+            rows = [] if self._conn is None else \
+                self._conn.execute(_SELECT_SINCE, (since, since)).fetchall()
+
+        counts = {"ENTRY_GRANTED": 0, "ENTRY_DENIED": 0, "HAZARD_PPE": 0, "RESTRICTED_ENTRY": 0}
+        denied_missing = {"helmet": 0, "vest": 0, "both": 0}
+        hazard_missing = {"helmet": 0, "vest": 0, "both": 0}
+        by_zone: dict[str, dict] = {}
+        by_hour = [0] * 24          # room alerts + denials per hour of day
+        by_day: dict[str, dict] = {}
+        for ts, etype, viol_json, zone in rows:
+            if etype not in counts:
+                continue
+            counts[etype] += 1
+            viol = json.loads(viol_json or "[]")
+            day = ts[:10]
+            d = by_day.setdefault(day, dict.fromkeys(counts, 0))
+            d[etype] += 1
+            if etype == "ENTRY_DENIED":
+                k = _missing_key(viol)
+                if k in denied_missing:
+                    denied_missing[k] += 1
+            elif etype == "HAZARD_PPE":
+                k = _missing_key(viol)
+                if k in hazard_missing:
+                    hazard_missing[k] += 1
+            if etype in ("HAZARD_PPE", "RESTRICTED_ENTRY"):
+                z = by_zone.setdefault(zone or "?", {"hazard": 0, "restricted": 0})
+                z["hazard" if etype == "HAZARD_PPE" else "restricted"] += 1
+            if etype != "ENTRY_GRANTED":
+                try:
+                    by_hour[int(ts[11:13])] += 1
+                except ValueError:
+                    pass
+
+        # One entry per calendar day in the period, so empty days show as 0.
+        if since:
+            first = _dt.date.fromisoformat(since)
+        else:
+            first = min((_dt.date.fromisoformat(k) for k in by_day), default=day0)
+            first = max(first, day0 - _dt.timedelta(days=89))  # chart stays readable
+        daily = []
+        n = (day0 - first).days + 1
+        for i in range(max(n, 1)):
+            day = (first + _dt.timedelta(days=i)).isoformat()
+            d = by_day.get(day, dict.fromkeys(counts, 0))
+            daily.append({"date": day, "granted": d["ENTRY_GRANTED"], "denied": d["ENTRY_DENIED"],
+                          "hazard": d["HAZARD_PPE"], "restricted": d["RESTRICTED_ENTRY"]})
+
+        checked = counts["ENTRY_GRANTED"] + counts["ENTRY_DENIED"]
+        return {
+            "days": days, "since": since, "today": day0.isoformat(),
+            "entrance": {"checked": checked, "granted": counts["ENTRY_GRANTED"],
+                         "denied": counts["ENTRY_DENIED"],
+                         "compliance_pct": round(100 * counts["ENTRY_GRANTED"] / checked, 1) if checked else None,
+                         "denied_missing": denied_missing},
+            "room": {"alerts": counts["HAZARD_PPE"] + counts["RESTRICTED_ENTRY"],
+                     "hazard": counts["HAZARD_PPE"], "restricted": counts["RESTRICTED_ENTRY"],
+                     "hazard_missing": hazard_missing,
+                     "by_zone": [{"zone": k, **v} for k, v in
+                                 sorted(by_zone.items(), key=lambda kv: -sum(kv[1].values()))]},
+            "by_hour": by_hour,
+            "daily": daily,
+        }
+
     def get_all_events(self, limit: int = 50, offset: int = 0,
                        event_type: str | None = None) -> dict:
         """Return a paginated slice of the event history, newest first.
@@ -226,8 +317,11 @@ class EventStore:
             "has_more": has_more,
         }
 
-    def get_recent(self, n: int = 10) -> list[dict]:
+    def get_recent(self, n: int = 10, camera: str | None = None) -> list[dict]:
         """Return up to n most recent events, newest first.
+
+        camera optionally restricts to one camera ("entrance" or "room");
+        rows written before the camera column count as "entrance".
 
         violations is decoded from JSON back to a Python list.
         Each returned dict is a fresh object — callers cannot mutate the store.
@@ -235,7 +329,7 @@ class EventStore:
         with self._lock:
             if self._conn is None:
                 return []
-            rows = self._conn.execute(_SELECT_RECENT, (n,)).fetchall()
+            rows = self._conn.execute(_SELECT_RECENT, (camera, camera, n)).fetchall()
         return [_row_to_event(r) for r in rows]
 
     def close(self) -> None:

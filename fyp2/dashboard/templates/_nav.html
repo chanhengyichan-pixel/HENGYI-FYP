@@ -1,0 +1,92 @@
+{# Shared left sidebar navigation. Include once inside #header on every page;
+   it is position: fixed, so where it sits in the markup does not matter. #}
+<style>
+  :root { --side-w: 212px; }
+  body { padding-left: var(--side-w); }
+  #appnav {
+    position: fixed; top: 0; left: 0; bottom: 0; width: var(--side-w); z-index: 20;
+    background: var(--bg-header); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; font-family: system-ui, "Segoe UI", sans-serif;
+  }
+  #appnav-brand { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 18px;
+                border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  #appnav-brand .stripe { width: 3px; height: 24px; background: var(--cyan); border-radius: 2px; }
+  #appnav-brand .name { font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text); line-height: 1.2; }
+  #appnav-brand .name small { display: block; font-size: 0.62rem; font-weight: 500; letter-spacing: 0.1em; color: var(--text-dim); }
+  #appnav nav { display: flex; flex-direction: column; gap: 4px; padding: 14px 10px; }
+  #appnav nav .grp { font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim);
+                   padding: 10px 10px 4px; }
+  #appnav nav a {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 7px;
+    color: var(--text-dim); text-decoration: none; font-size: 0.9rem; font-weight: 500;
+    border-left: 3px solid transparent;
+  }
+  #appnav nav a svg { width: 18px; height: 18px; flex-shrink: 0; stroke: currentColor; fill: none; stroke-width: 1.8;
+                    stroke-linecap: round; stroke-linejoin: round; }
+  #appnav nav a:hover { color: var(--text); background: #1a2430; }
+  #appnav nav a.active { color: var(--cyan); background: #0b1e27; border-left-color: var(--cyan); }
+  #appnav-user { margin-top: auto; border-top: 1px solid var(--border); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  #appnav-user .who { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text); min-width: 0; }
+  #appnav-user .who span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #appnav-user .role {
+    font-size: 0.6rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-dim); flex-shrink: 0;
+  }
+  #appnav-user .role.admin { color: var(--amber); border-color: #78350f; }
+  #appnav-user button {
+    width: 100%; background: none; border: 1px solid var(--border); color: var(--text-dim);
+    font-size: 0.8rem; padding: 7px 10px; border-radius: 6px; cursor: pointer;
+  }
+  #appnav-user button:hover { color: var(--text); border-color: var(--text-dim); }
+  /* The page's own header keeps the page title; the brand lives in the sidebar. */
+  #header-stripe { display: none; }
+
+  /* Narrow screens: the sidebar becomes a bar across the top. */
+  @media (max-width: 760px) {
+    body { padding-left: 0; }
+    #appnav { position: static; width: auto; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center;
+            border-right: none; border-bottom: 1px solid var(--border); }
+    #appnav-brand { height: 44px; border-bottom: none; padding: 0 12px; }
+    #appnav nav { flex-direction: row; flex-wrap: wrap; padding: 4px 8px 8px; width: 100%; order: 3; gap: 2px; }
+    #appnav nav .grp { display: none; }
+    #appnav nav a { padding: 7px 10px; font-size: 0.82rem; border-left: none; gap: 6px; }
+    #appnav nav a svg { width: 15px; height: 15px; }
+    #appnav-user { margin: 0 0 0 auto; border-top: none; padding: 6px 12px; flex-direction: row; align-items: center; }
+    #appnav-user button { width: auto; padding: 4px 10px; }
+    #header { height: auto !important; flex-wrap: wrap; padding: 8px 12px !important; row-gap: 6px; }
+    #header-right { display: none !important; }
+  }
+</style>
+<aside id="appnav">
+  <div id="appnav-brand">
+    <div class="stripe"></div>
+    <div class="name">PPE Monitor<small>Edge AI safety</small></div>
+  </div>
+  <nav>
+    <div class="grp">Monitor</div>
+    <a href="{{ url_for('index') }}" class="{{ 'active' if request.endpoint == 'index' }}">
+      <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/></svg>Live
+    </a>
+    <a href="{{ url_for('history') }}" class="{{ 'active' if request.endpoint == 'history' }}">
+      <svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>History
+    </a>
+    <a href="{{ url_for('statistics') }}" class="{{ 'active' if request.endpoint == 'statistics' }}">
+      <svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Statistics
+    </a>
+    {% if current_role == 'admin' %}
+    <div class="grp">Admin</div>
+    <a href="{{ url_for('settings') }}" class="{{ 'active' if (request.endpoint or '').startswith('settings') }}">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>Settings
+    </a>
+    {% endif %}
+  </nav>
+  {% if auth_enabled and current_user %}
+  <div id="appnav-user">
+    <div class="who"><span>{{ current_user }}</span><span class="role {{ current_role }}">{{ current_role }}</span></div>
+    <form method="post" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button type="submit">Log out</button>
+    </form>
+  </div>
+  {% endif %}
+</aside>

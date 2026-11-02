@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PPE Monitor — Statistics</title>
+  {% include "_base_style.html" %}
+  <style>
+    #content { max-width: 1200px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
+    #filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    #filters .lbl { font-size: 0.78rem; color: var(--text-dim); }
+    #range { display: flex; gap: 6px; }
+    #range button { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px;
+                    padding: 6px 12px; font-size: 0.8rem; cursor: pointer; }
+    #range button.on { color: var(--cyan); border-color: var(--cyan-dim); background: #0b1e27; }
+    #period { margin-left: auto; font-size: 0.78rem; color: var(--text-dim); font-family: "Courier New", monospace; }
+
+    .sec-title { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--c); margin-top: 4px; }
+    .sec-title span { color: var(--text-dim); font-weight: 500; letter-spacing: 0.04em; text-transform: none; margin-left: 10px; }
+    .entrance { --c: var(--cyan); } .room { --c: var(--amber); }
+
+    .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .tile { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+    .tile .t-lbl { font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); }
+    .tile .t-val { font-size: 1.9rem; font-weight: 700; margin-top: 4px; color: var(--text); font-variant-numeric: tabular-nums; }
+    .tile .t-sub { font-size: 0.75rem; color: var(--text-dim); margin-top: 2px; }
+    .tile .dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 1px; }
+
+    .grid2 { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+    .chart-card { padding-bottom: 12px; }
+    .chart-card .card-hdr { display: flex; align-items: center; gap: 14px; }
+    .legend { display: flex; gap: 14px; margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--text-dim); }
+    .legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+    .chart { position: relative; padding: 10px 16px 0; }
+    .chart svg { display: block; width: 100%; overflow: visible; }
+    .empty { padding: 26px 16px; text-align: center; color: var(--text-dim); font-size: 0.85rem; }
+    .axis { fill: var(--text-dim); font-size: 10px; font-family: system-ui, sans-serif; }
+    .grid-line { stroke: var(--border); stroke-width: 1; }
+    .hit { fill: transparent; cursor: default; }
+    .hit:hover { fill: rgba(255,255,255,0.04); }
+
+    .hbar { display: grid; grid-template-columns: 120px 1fr 36px; gap: 10px; align-items: center; padding: 6px 16px; font-size: 0.85rem; }
+    .hbar .track { height: 10px; background: #0c1117; border-radius: 4px; overflow: hidden; display: flex; gap: 2px; }
+    .hbar .seg { height: 100%; }
+    .hbar .seg:last-child { border-radius: 0 4px 4px 0; }
+    .hbar .n { text-align: right; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+    #tip { position: fixed; pointer-events: none; background: #0b1016; border: 1px solid var(--border); border-radius: 6px;
+           padding: 8px 10px; font-size: 0.78rem; line-height: 1.5; display: none; z-index: 10; min-width: 140px; }
+    #tip b { color: var(--text); } #tip .row { display: flex; justify-content: space-between; gap: 14px; color: var(--text-dim); }
+    #tip .row span:last-child { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    @media (max-width: 900px) { .tiles { grid-template-columns: repeat(2, 1fr); } .grid2 { grid-template-columns: 1fr; } #period { margin-left: 0; width: 100%; } }
+  </style>
+</head>
+<body>
+  {% include "_nav.html" %}
+  <div id="header">
+    <div id="header-left">
+      <div id="header-stripe"></div>
+      <div id="header-title">Statistics</div>
+    </div>
+  </div>
+
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <!-- Texture on the "bad" series so it is not told apart by colour alone. -->
+      <pattern id="tex" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="6" height="6" fill="var(--red)"></rect>
+        <line x1="0" y1="0" x2="0" y2="6" stroke="rgba(0,0,0,0.35)" stroke-width="2"></line>
+      </pattern>
+    </defs>
+  </svg>
+
+  <div id="content">
+    <div id="filters">
+      <span class="lbl">Period</span>
+      <div id="range">
+        <button data-d="1">Today</button>
+        <button data-d="7" class="on">7 days</button>
+        <button data-d="30">30 days</button>
+        <button data-d="0">All time</button>
+      </div>
+      <span id="period">—</span>
+    </div>
+
+    <!-- Entrance -->
+    <div class="sec-title entrance">Entrance<span>PPE check before entry</span></div>
+    <div class="tiles">
+      <div class="tile"><div class="t-lbl">People checked</div><div class="t-val" id="e-checked">—</div></div>
+      <div class="tile"><div class="t-lbl"><i class="dot" style="background:var(--green)"></i>Allowed</div><div class="t-val" id="e-granted">—</div></div>
+      <div class="tile"><div class="t-lbl"><i class="dot" style="background:var(--red)"></i>Denied</div><div class="t-val" id="e-denied">—</div></div>
+      <div class="tile"><div class="t-lbl">PPE compliance</div><div class="t-val" id="e-pct">—</div><div class="t-sub">allowed ÷ checked</div></div>
+    </div>
+    <div class="grid2">
+      <div class="card chart-card">
+        <div class="card-hdr">Entry checks per day
+          <div class="legend"><span><i style="background:var(--green)"></i>Allowed</span><span><i style="background:url(#tex);background:repeating-linear-gradient(45deg,var(--red) 0 3px,#a32d2d 3px 5px)"></i>Denied</span></div>
+        </div>
+        <div class="chart" id="c-entrance"></div>
+      </div>
+      <div class="card chart-card">
+        <div class="card-hdr">Why entry was denied</div>
+        <div id="c-denied-missing"></div>
+      </div>
+    </div>
+
+    {% if room_enabled %}
+    <!-- Room -->
+    <div class="sec-title room">Room<span>hazard and restricted zones</span></div>
+    <div class="tiles">
+      <div class="tile"><div class="t-lbl">Room alerts</div><div class="t-val" id="r-alerts">—</div></div>
+      <div class="tile"><div class="t-lbl"><i class="dot" style="background:var(--amber)"></i>Hazard, missing PPE</div><div class="t-val" id="r-hazard">—</div></div>
+      <div class="tile"><div class="t-lbl"><i class="dot" style="background:var(--red)"></i>Restricted entry</div><div class="t-val" id="r-restricted">—</div></div>
+      <div class="tile"><div class="t-lbl">Most alerts in</div><div class="t-val" id="r-topzone" style="font-size:1.15rem;margin-top:12px">—</div></div>
+    </div>
+    <div class="grid2">
+      <div class="card chart-card">
+        <div class="card-hdr">Room alerts per day
+          <div class="legend"><span><i style="background:var(--amber)"></i>Hazard</span><span><i style="background:repeating-linear-gradient(45deg,var(--red) 0 3px,#a32d2d 3px 5px)"></i>Restricted</span></div>
+        </div>
+        <div class="chart" id="c-room"></div>
+      </div>
+      <div class="card chart-card">
+        <div class="card-hdr">Alerts by zone</div>
+        <div id="c-zones"></div>
+        <div class="card-hdr" style="border-top:1px solid var(--border);margin-top:8px">Missing in hazard zones</div>
+        <div id="c-hazard-missing"></div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card chart-card">
+      <div class="card-hdr">Problems by hour of day<span style="margin-left:10px;text-transform:none;letter-spacing:0;font-weight:500">denied entries + room alerts</span></div>
+      <div class="chart" id="c-hour"></div>
+    </div>
+  </div>
+
+  <div id="tip"></div>
+
+<script>
+(() => {
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const C = { green: css("--green"), red: "url(#tex)", amber: css("--amber"), cyan: css("--cyan") };
+  const tip = document.getElementById("tip");
+  const $ = id => document.getElementById(id);
+  let days = 7;
+
+  function showTip(e, html) { tip.innerHTML = html; tip.style.display = "block"; moveTip(e); }
+  function moveTip(e) {
+    const w = tip.offsetWidth, x = e.clientX + 14 + w > innerWidth ? e.clientX - w - 14 : e.clientX + 14;
+    tip.style.left = x + "px"; tip.style.top = (e.clientY + 14) + "px";
+  }
+  const hideTip = () => tip.style.display = "none";
+  const row = (k, v) => `<div class="row"><span>${k}</span><span>${v}</span></div>`;
+  // Axis top: a round number divisible by 2, so the middle tick is a whole count.
+  const niceMax = m => {
+    if (m <= 4) return 4;
+    const p = 10 ** Math.floor(Math.log10(m)); let t = Math.ceil(m / p) * p;
+    if ((t / p) % 2) t += p; return t;
+  };
+  const fmtDay = d => new Date(d + "T00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
+
+  // Stacked vertical bars. series: [{key, label, color}], items: [{x label, values...}]
+  function bars(el, items, series, labelOf, tipTitle) {
+    const total = items.reduce((a, it) => a + series.reduce((s, sr) => s + it[sr.key], 0), 0);
+    if (!total) { el.innerHTML = '<div class="empty">No events in this period</div>'; return; }
+    const W = el.clientWidth - 32 || 600, H = 170, L = 26, B = 20, plotW = W - L, plotH = H - B - 6;
+    const max = niceMax(Math.max(...items.map(it => series.reduce((s, sr) => s + it[sr.key], 0))));
+    const slot = plotW / items.length, bw = Math.max(3, Math.min(28, slot * 0.6));
+    const every = Math.ceil(items.length / Math.max(1, Math.floor(plotW / 48)));
+    let g = "";
+    for (let i = 0; i <= 2; i++) {
+      const v = max * i / 2, y = 6 + plotH - plotH * v / max;
+      g += `<line class="grid-line" x1="${L}" x2="${W}" y1="${y}" y2="${y}"/><text class="axis" x="${L - 6}" y="${y + 3}" text-anchor="end">${v}</text>`;
+    }
+    items.forEach((it, i) => {
+      const cx = L + slot * i + slot / 2;
+      let y = 6 + plotH;
+      const segs = series.filter(sr => it[sr.key] > 0);
+      segs.forEach((sr, n) => {
+        const h = plotH * it[sr.key] / max, top = n === segs.length - 1;
+        const hh = Math.max(1, h - (n > 0 ? 2 : 0));   // 2px gap between stacked segments
+        y -= h;
+        const r = top ? Math.min(4, bw / 2, hh) : 0;
+        g += top
+          ? `<path d="M${cx - bw / 2},${y + hh} v${-(hh - r)} q0,${-r} ${r},${-r} h${bw - 2 * r} q${r},0 ${r},${r} v${hh - r} z" fill="${sr.color}"/>`
+          : `<rect x="${cx - bw / 2}" y="${y}" width="${bw}" height="${hh}" fill="${sr.color}"/>`;
+      });
+      if (i % every === 0) g += `<text class="axis" x="${cx}" y="${H - 4}" text-anchor="middle">${labelOf(it)}</text>`;
+      g += `<rect class="hit" data-i="${i}" x="${L + slot * i}" y="0" width="${slot}" height="${6 + plotH}"/>`;
+    });
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" height="${H}">${g}</svg>`;
+    el.querySelectorAll(".hit").forEach(h => {
+      const it = items[+h.dataset.i];
+      h.addEventListener("mouseenter", e => showTip(e, `<b>${tipTitle(it)}</b>` + series.map(sr => row(sr.label, it[sr.key])).join("")));
+      h.addEventListener("mousemove", moveTip);
+      h.addEventListener("mouseleave", hideTip);
+    });
+  }
+
+  // Horizontal bars, optionally stacked: rows [{label, parts:[{v, color, label}]}]
+  function hbars(el, rows) {
+    const max = Math.max(1, ...rows.map(r => r.parts.reduce((a, p) => a + p.v, 0)));
+    if (!rows.some(r => r.parts.some(p => p.v))) { el.innerHTML = '<div class="empty">None in this period</div>'; return; }
+    el.innerHTML = rows.map((r, i) => {
+      const n = r.parts.reduce((a, p) => a + p.v, 0);
+      const segs = r.parts.filter(p => p.v).map(p =>
+        `<div class="seg" style="width:${100 * p.v / max}%;background:${p.color === C.red ? "repeating-linear-gradient(45deg,var(--red) 0 3px,#a32d2d 3px 5px)" : p.color}"></div>`).join("");
+      return `<div class="hbar" data-i="${i}"><span>${r.label}</span><div class="track">${segs}</div><span class="n">${n}</span></div>`;
+    }).join("");
+    el.querySelectorAll(".hbar").forEach(h => {
+      const r = rows[+h.dataset.i];
+      h.addEventListener("mouseenter", e => showTip(e, `<b>${r.label}</b>` + r.parts.map(p => row(p.label, p.v)).join("")));
+      h.addEventListener("mousemove", moveTip);
+      h.addEventListener("mouseleave", hideTip);
+    });
+  }
+
+  function render(s) {
+    const e = s.entrance, r = s.room;
+    $("period").textContent = s.since ? `${s.since} → ${s.today}` : `all time → ${s.today}`;
+    $("e-checked").textContent = e.checked;
+    $("e-granted").textContent = e.granted;
+    $("e-denied").textContent = e.denied;
+    $("e-pct").textContent = e.compliance_pct === null ? "—" : e.compliance_pct + "%";
+    const dayLbl = it => fmtDay(it.date);
+    bars($("c-entrance"), s.daily, [
+      { key: "granted", label: "Allowed", color: C.green },
+      { key: "denied", label: "Denied", color: C.red }], dayLbl, it => fmtDay(it.date));
+    const dm = e.denied_missing;
+    hbars($("c-denied-missing"), [
+      { label: "No helmet", parts: [{ v: dm.helmet, color: C.cyan, label: "Denied" }] },
+      { label: "No vest", parts: [{ v: dm.vest, color: C.cyan, label: "Denied" }] },
+      { label: "Neither", parts: [{ v: dm.both, color: C.cyan, label: "Denied" }] }]);
+
+    if ($("c-room")) {
+      $("r-alerts").textContent = r.alerts;
+      $("r-hazard").textContent = r.hazard;
+      $("r-restricted").textContent = r.restricted;
+      $("r-topzone").textContent = r.by_zone.length ? r.by_zone[0].zone : "—";
+      bars($("c-room"), s.daily, [
+        { key: "hazard", label: "Hazard", color: C.amber },
+        { key: "restricted", label: "Restricted", color: C.red }], dayLbl, it => fmtDay(it.date));
+      hbars($("c-zones"), r.by_zone.map(z => ({ label: z.zone, parts: [
+        { v: z.hazard, color: C.amber, label: "Hazard" }, { v: z.restricted, color: C.red, label: "Restricted" }] })));
+      const hm = r.hazard_missing;
+      hbars($("c-hazard-missing"), [
+        { label: "No helmet", parts: [{ v: hm.helmet, color: C.amber, label: "Hazard alerts" }] },
+        { label: "No vest", parts: [{ v: hm.vest, color: C.amber, label: "Hazard alerts" }] },
+        { label: "Neither", parts: [{ v: hm.both, color: C.amber, label: "Hazard alerts" }] }]);
+    }
+    bars($("c-hour"), s.by_hour.map((n, h) => ({ h, n })), [{ key: "n", label: "Problems", color: C.cyan }],
+         it => String(it.h).padStart(2, "0"), it => `${String(it.h).padStart(2, "0")}:00 – ${String(it.h).padStart(2, "0")}:59`);
+  }
+
+  let last = null;
+  function load() {
+    fetch("/api/summary?days=" + days)
+      .then(r => { if (r.status === 401) { location.href = "/login"; throw 0; } return r.json(); })
+      .then(s => { last = s; render(s); })
+      .catch(() => {});
+  }
+  document.querySelectorAll("#range button").forEach(b => b.onclick = () => {
+    document.querySelectorAll("#range button").forEach(x => x.classList.toggle("on", x === b));
+    days = +b.dataset.d; load();
+  });
+  addEventListener("resize", () => last && render(last));
+  load();
+  setInterval(load, 30000);
+})();
+</script>
+</body>
+</html>

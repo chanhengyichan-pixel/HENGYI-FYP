@@ -170,3 +170,39 @@ class TestStatus:
             events, _ = m.update([p], FrameVerdict(status=ComplianceStatus.NO_PERSON))
             fired.extend(events)
         assert [e.event_type for e in fired] == [HAZARD_PPE]
+
+
+class TestFlickerFilter:
+    def _monitor(self, ratio):
+        cfg = {"zones": {**CONFIG["zones"], "hazard_min_missing_ratio": ratio}}
+        clock = [0.0]
+        return ZoneMonitor(cfg, clock=lambda: clock[0]), clock
+
+    def _feed(self, m, clock, pattern):
+        """pattern: list of (time, violations) for one person in the hazard zone."""
+        p = person(IN_HAZARD)
+        fired = []
+        for t, v in pattern:
+            clock[0] = t
+            events, _ = m.update([p], verdict((p, v)))
+            fired.extend(events)
+        return fired
+
+    def _flicker(self):
+        # Worn helmet that drops out every other frame for 3 s (50% missing).
+        return [(i * 0.25, ["no-helmet"] if i % 2 == 0 else []) for i in range(13)]
+
+    def test_flicker_fires_without_filter(self):
+        m, clock = self._monitor(0.0)
+        assert len(self._feed(m, clock, self._flicker())) == 1
+
+    def test_flicker_ignored_with_filter(self):
+        m, clock = self._monitor(0.7)
+        assert self._feed(m, clock, self._flicker()) == []
+
+    def test_really_missing_still_fires_with_filter(self):
+        m, clock = self._monitor(0.7)
+        # Missing in 8 of 9 frames over 2 s.
+        pattern = [(i * 0.25, [] if i == 4 else ["no-helmet"]) for i in range(9)]
+        events = self._feed(m, clock, pattern)
+        assert len(events) == 1 and events[0].event_type == HAZARD_PPE

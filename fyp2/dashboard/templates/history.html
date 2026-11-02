@@ -308,62 +308,18 @@
   </style>
 </head>
 <body>
+  {% include "_nav.html" %}
 
   <div id="header">
     <div id="header-left">
       <div id="header-stripe"></div>
-      <div id="header-title">PPE Monitor — Violation History</div>
+      <div id="header-title">Event history</div>
     </div>
-    <a id="nav-link" href="/">&#8592; Live Monitor</a>
   </div>
 
   <div id="content">
 
-    <!-- Summary counts -->
-    <div id="stats-row">
-      <div class="stat-card">
-        <div class="stat-lbl">Total Events</div>
-        <div class="stat-val cyan" id="s-total">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-lbl">Granted</div>
-        <div class="stat-val green" id="s-granted">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-lbl">Denied</div>
-        <div class="stat-val red" id="s-denied">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-lbl">Hazard (no PPE)</div>
-        <div class="stat-val amber" id="s-hazard">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-lbl">Restricted entry</div>
-        <div class="stat-val red" id="s-restricted">—</div>
-      </div>
-    </div>
-
-    <!-- Compliance bar -->
-    <div id="compliance-card" class="card">
-      <div class="card-hdr">Compliance Rate</div>
-      <div class="card-body">
-        <div id="bar-labels">
-          <span class="lbl-granted" id="bar-granted-pct">—</span>
-          <span class="lbl-denied"  id="bar-denied-pct">—</span>
-        </div>
-        <div id="compliance-bar">
-          <div id="compliance-bar-fill" style="width:0%"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Violation breakdown -->
-    <div class="card">
-      <div class="card-hdr">Violation Frequency</div>
-      <div id="violations-list">
-        <span class="viol-empty">Loading...</span>
-      </div>
-    </div>
+    <p style="font-size:0.82rem;color:var(--text-dim)">Every recorded event. For totals and charts, see <a href="{{ url_for('statistics') }}" style="color:var(--cyan)">Statistics</a>.</p>
 
     <!-- Full event history -->
     <div class="card">
@@ -397,47 +353,6 @@
   <script>
     let currentPage = 1;
 
-    function loadStats() {
-      fetch("/api/stats")
-        .then(r => r.json())
-        .then(data => {
-          document.getElementById("s-total").textContent   = data.total_events;
-          document.getElementById("s-granted").textContent = data.granted_count;
-          document.getElementById("s-denied").textContent  = data.denied_count;
-          document.getElementById("s-hazard").textContent  = data.hazard_count;
-          document.getElementById("s-restricted").textContent = data.restricted_count;
-
-          // Entrance compliance bar (entrance decisions only)
-          const total = data.granted_count + data.denied_count;
-          const pct   = total > 0 ? Math.round(data.granted_count / total * 100) : 0;
-          document.getElementById("compliance-bar-fill").style.width = pct + "%";
-          document.getElementById("bar-granted-pct").textContent =
-            "GRANTED  " + pct + "%";
-          document.getElementById("bar-denied-pct").textContent =
-            (100 - pct) + "%  DENIED";
-
-          // Violation breakdown
-          const vList = document.getElementById("violations-list");
-          const vc    = data.violation_counts;
-          const keys  = Object.keys(vc);
-          if (keys.length === 0) {
-            vList.innerHTML = '<span class="viol-empty">No violations recorded.</span>';
-            return;
-          }
-          const maxCount = Math.max(...Object.values(vc));
-          vList.innerHTML = keys.map(k => {
-            const pct = maxCount > 0 ? Math.round(vc[k] / maxCount * 100) : 0;
-            return `<div class="viol-row">
-              <span class="viol-name">${k}</span>
-              <div class="viol-bar-wrap">
-                <div class="viol-bar-fill" style="width:${pct}%"></div>
-              </div>
-              <span class="viol-count">${vc[k]}</span>
-            </div>`;
-          }).join("");
-        });
-    }
-
     const EVENT_LABEL = {
       ENTRY_GRANTED:    { txt: "ENTRY ALLOWED",   cls: "ev-granted" },
       ENTRY_DENIED:     { txt: "ENTRY DENIED",    cls: "ev-denied" },
@@ -445,17 +360,27 @@
       RESTRICTED_ENTRY: { txt: "RESTRICTED",      cls: "ev-restricted" },
     };
 
+    // Hazard alerts name what is missing: NO HELMET / NO VEST / NO HELMET & VEST.
+    function eventLabel(e) {
+      const lbl = EVENT_LABEL[e.event_type] || { txt: e.event_type, cls: "" };
+      if (e.event_type !== "HAZARD_PPE") return lbl;
+      const h = e.violations.includes("no-helmet"), v = e.violations.includes("no-vest");
+      const what = h && v ? "NO HELMET & VEST" : h ? "NO HELMET" : v ? "NO VEST" : "NO PPE";
+      return { txt: "HAZARD — " + what, cls: lbl.cls };
+    }
+
+
     function loadEvents(page) {
       const type = document.getElementById("type-filter").value;
       fetch("/api/events?page=" + page + (type ? "&type=" + type : ""))
-        .then(r => r.json())
+        .then(r => { if (r.status === 401) { location.href = "/login"; throw 0; } return r.json(); })
         .then(data => {
           const tbody = document.getElementById("events-tbody");
           if (data.events.length === 0) {
             tbody.innerHTML = '<tr class="no-events"><td colspan="5">No events yet.</td></tr>';
           } else {
             tbody.innerHTML = data.events.map(e => {
-              const lbl   = EVENT_LABEL[e.event_type] || { txt: e.event_type, cls: "" };
+              const lbl   = eventLabel(e);
               const viol  = e.violations.length ? e.violations.join(", ") : "—";
               const where = e.zone ? e.camera + " / " + e.zone : e.camera;
               const snap  = e.snapshot
@@ -481,7 +406,6 @@
       loadEvents(currentPage);
     }
 
-    loadStats();
     loadEvents(currentPage);
   </script>
 </body>

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PPE Monitor — Settings</title>
+  {% include "_base_style.html" %}
+  <style>
+    #content { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim);
+         font-weight: 600; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+    td { padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    .role { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+            padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-dim); }
+    .role.admin { color: var(--amber); border-color: #78350f; }
+    .row-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+    .row-actions form { display: flex; gap: 6px; }
+    .row-actions input { width: 150px; padding: 6px 9px; font-size: 0.8rem; }
+    .row-actions .btn { padding: 6px 12px; font-size: 0.78rem; }
+    #add-form { display: grid; grid-template-columns: 1fr 1fr 140px auto; gap: 10px; align-items: end; padding: 4px 16px 16px; }
+    #add-form label { margin-top: 10px; }
+    .roles-help { padding: 12px 16px; font-size: 0.82rem; color: var(--text-dim); line-height: 1.6; }
+    .roles-help b { color: var(--text); }
+    .flashes { margin: 0; }
+    @media (max-width: 720px) {
+      #add-form { grid-template-columns: 1fr; }
+      .row-actions { justify-content: flex-start; }
+      th:nth-child(3), td:nth-child(3) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  {% include "_nav.html" %}
+  <div id="header">
+    <div id="header-left">
+      <div id="header-stripe"></div>
+      <div id="header-title">Settings</div>
+    </div>
+  </div>
+
+  <div id="content">
+    <div class="subtabs">
+      <a href="{{ url_for('settings') }}" class="on">Accounts</a>
+      <a href="{{ url_for('settings_zones') }}">Room camera zones</a>
+    </div>
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, m in msgs %}<div class="msg {{ cat }} flashes">{{ m }}</div>{% endfor %}
+    {% endwith %}
+
+    <div class="card">
+      <div class="card-hdr">Accounts</div>
+      <div class="roles-help">
+        <b>Admin</b>: everything, including this Settings page. &nbsp;
+        <b>Viewer</b>: live view and history only, cannot change settings.
+      </div>
+      <table>
+        <thead><tr><th>Username</th><th>Role</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+        {% for u in users %}
+          <tr>
+            <td>{{ u.username }}{% if u.username == current_user %} <span style="color:var(--text-dim)">(you)</span>{% endif %}</td>
+            <td><span class="role {{ u.role }}">{{ u.role }}</span></td>
+            <td style="color:var(--text-dim)">{{ u.created_at }}</td>
+            <td>
+              <div class="row-actions">
+                <form method="post" action="{{ url_for('settings_users') }}">
+                  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+                  <input type="hidden" name="action" value="password">
+                  <input type="hidden" name="username" value="{{ u.username }}">
+                  <input type="password" name="password" placeholder="New password" autocomplete="new-password" required>
+                  <button class="btn btn-ghost" type="submit">Set</button>
+                </form>
+                {% if u.username != current_user %}
+                <form method="post" action="{{ url_for('settings_users') }}"
+                      onsubmit="return confirm('Delete account {{ u.username }}?')">
+                  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+                  <input type="hidden" name="action" value="delete">
+                  <input type="hidden" name="username" value="{{ u.username }}">
+                  <button class="btn btn-danger" type="submit">Delete</button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="card-hdr">Add account</div>
+      <form id="add-form" method="post" action="{{ url_for('settings_users') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="add">
+        <div><label for="nu">Username</label><input id="nu" name="username" required></div>
+        <div><label for="np">Password (6+ characters)</label><input id="np" name="password" type="password" autocomplete="new-password" required></div>
+        <div><label for="nr">Role</label>
+          <select id="nr" name="role">
+            {% for r in roles|reverse %}<option value="{{ r }}">{{ r|capitalize }}</option>{% endfor %}
+          </select>
+        </div>
+        <button class="btn" type="submit">Add</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

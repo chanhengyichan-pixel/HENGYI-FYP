@@ -437,3 +437,56 @@ class TestConfigFailFast:
     def test_missing_storage_section_raises(self):
         with pytest.raises(KeyError):
             EventStore({})
+
+
+class TestGetRecentByCamera:
+    def test_filters_by_camera_and_old_rows_count_as_entrance(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        store.append(make_event("granted", ts="2026-10-31 10:00:00"))  # no camera (old row)
+        store.append({"timestamp": "2026-10-31 10:00:01", "verdict": "violation",
+                      "violations": ["no-helmet"], "event_type": "HAZARD_PPE",
+                      "camera": "room", "zone": "Machine area"})
+        store.append({**make_event("denied", ts="2026-10-31 10:00:02"), "camera": "entrance"})
+        assert [e["event_type"] for e in store.get_recent(10, camera="entrance")] == \
+            ["ENTRY_DENIED", "ENTRY_GRANTED"]
+        assert [e["event_type"] for e in store.get_recent(10, camera="room")] == ["HAZARD_PPE"]
+        assert len(store.get_recent(10)) == 3
+
+
+class TestSummary:
+    def _store(self, tmp_path):
+        store = EventStore(make_config(tmp_path))
+        rows = [
+            ("2026-11-01 09:00:00", "granted", [], "ENTRY_GRANTED", "entrance", None),
+            ("2026-11-02 09:10:00", "denied", ["no-vest"], "ENTRY_DENIED", "entrance", None),
+            ("2026-11-02 09:20:00", "granted", [], "ENTRY_GRANTED", "entrance", None),
+            ("2026-11-02 14:05:00", "violation", ["no-helmet", "no-vest"], "HAZARD_PPE", "room", "Machine area"),
+            ("2026-11-02 14:30:00", "violation", [], "RESTRICTED_ENTRY", "room", "Server room door"),
+            ("2026-10-01 08:00:00", "denied", ["no-helmet"], "ENTRY_DENIED", "entrance", None),
+        ]
+        for ts, verdict, viol, et, cam, zone in rows:
+            store.append({"timestamp": ts, "verdict": verdict, "violations": viol,
+                          "event_type": et, "camera": cam, "zone": zone})
+        return store
+
+    def test_last_7_days(self, tmp_path):
+        s = self._store(tmp_path).get_summary(7, today="2026-11-02")
+        assert s["entrance"] == {"checked": 3, "granted": 2, "denied": 1, "compliance_pct": 66.7,
+                                 "denied_missing": {"helmet": 0, "vest": 1, "both": 0}}
+        assert s["room"]["hazard"] == 1 and s["room"]["restricted"] == 1
+        assert s["room"]["hazard_missing"]["both"] == 1
+        assert {z["zone"] for z in s["room"]["by_zone"]} == {"Machine area", "Server room door"}
+        assert len(s["daily"]) == 7 and s["daily"][-1] == {
+            "date": "2026-11-02", "granted": 1, "denied": 1, "hazard": 1, "restricted": 1}
+        assert s["by_hour"][14] == 2 and s["by_hour"][9] == 1   # granted not counted
+
+    def test_today_and_all_time(self, tmp_path):
+        store = self._store(tmp_path)
+        assert store.get_summary(1, today="2026-11-02")["entrance"]["checked"] == 2
+        all_time = store.get_summary(None, today="2026-11-02")
+        assert all_time["entrance"]["denied"] == 2
+        assert all_time["daily"][0]["date"] == "2026-10-01"
+
+    def test_empty(self, tmp_path):
+        s = EventStore(make_config(tmp_path)).get_summary(7, today="2026-11-02")
+        assert s["entrance"]["compliance_pct"] is None and len(s["daily"]) == 7

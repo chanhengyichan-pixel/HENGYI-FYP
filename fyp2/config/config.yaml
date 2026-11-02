@@ -28,7 +28,7 @@ cameras:
     max_failed_reads: 10
     loop_video: true
   room:
-    enabled: false
+    enabled: true
     backend: opencv
     source: "videos/room_test.mp4"
     width: 640
@@ -39,6 +39,10 @@ cameras:
 dashboard:
   host: "0.0.0.0"
   port: 5000
+  # Login for the dashboard (roles: admin, viewer). First start with no
+  # accounts opens a page to create the first admin. Accounts live in the
+  # same SQLite file as the events. false = no login (local testing only).
+  auth: true
 
 # imgsz: YOLO input size. 640 on the laptop; 320 is a sensible starting
 #   point on the Pi (roughly 4x less compute). The same .pt file works at
@@ -181,11 +185,18 @@ zones:
   hazard_seconds: 2.0
   restricted_seconds: 1.0
   grace_seconds: 1.0
+  hazard_min_missing_ratio: 0.7   # PPE must be missing in 70% of frames (ignores helmet flicker far away)
   cooldown_seconds: 30.0
+  # Zones drawn in the dashboard (Settings > Room zones) are saved here and
+  # override the areas below. Delete the file to use the areas below again.
+  file: "output/zones.json"
+  # Zones below match videos/room_test.mp4 (640x360, the two taped areas):
+  # right area in front of the door = hazard, left area by the stairs =
+  # restricted. Redraw with scripts/zone_picker.py for a new camera position.
   areas:
+    - name: "Server room door"
+      type: restricted
+      polygon: [[274, 261], [296, 222], [191, 215], [145, 255], [271, 261]]
     - name: "Machine area"
       type: hazard
-      polygon: [[40, 260], [300, 260], [300, 500], [40, 500]]
-    - name: "Server cabinet"
-      type: restricted
-      polygon: [[420, 260], [620, 260], [620, 500], [420, 500]]
+      polygon: [[279, 263], [417, 274], [405, 228], [301, 223], [279, 263]]

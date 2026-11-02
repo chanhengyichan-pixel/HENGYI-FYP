@@ -118,7 +118,9 @@ def _app(tmp_path, with_room=True):
     shots = tmp_path / "shots"
     shots.mkdir(exist_ok=True)
     config = {"decision_engine": {"debug_overlay": False},
-              "alerts": {"screenshot_dir": str(shots)}}
+              "alerts": {"screenshot_dir": str(shots)},
+              "storage": {"db_path": str(tmp_path / "e.db")},
+              "dashboard": {"auth": False}}
     store = EventStore({"storage": {"db_path": str(tmp_path / "e.db")}})
     store.append({"timestamp": "2026-10-30 10:00:00", "verdict": "violation",
                   "violations": [], "event_type": "RESTRICTED_ENTRY", "camera": "room",
@@ -138,6 +140,19 @@ class TestRoutes:
         assert data["room"]["enabled"] is True
         assert data["room"]["zone_status"][0]["zone"] == "Server"
         assert data["recent_events"][0]["event_type"] == "RESTRICTED_ENTRY"
+
+    def test_status_splits_entrance_and_room_events(self, tmp_path):
+        client, _ = _app(tmp_path)
+        data = client.get("/api/status").get_json()
+        assert data["entrance_events"] == []
+        assert [e["event_type"] for e in data["room_events"]] == ["RESTRICTED_ENTRY"]
+
+    def test_statistics_page_and_summary_api(self, tmp_path):
+        client, _ = _app(tmp_path)
+        assert b"Room alerts per day" in client.get("/statistics").data
+        data = client.get("/api/summary?days=0").get_json()
+        assert data["room"]["restricted"] == 1 and data["days"] is None
+        assert client.get("/api/summary?days=abc").get_json()["days"] == 7
 
     def test_status_room_disabled(self, tmp_path):
         client, _ = _app(tmp_path, with_room=False)

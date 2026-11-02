@@ -84,27 +84,58 @@
 
     #header-right .h-val { color: var(--text); }
 
-    /* ── Page layout ── */
+    /* ── Page layout: one row per camera, its panel beside it ── */
     #main {
       display: flex;
+      flex-direction: column;
       height: calc(100vh - var(--header-h));
       gap: 12px;
       padding: 12px;
     }
 
-    /* ── Left: camera (62%) ── */
-    #left-col {
+    .section {
+      flex: 1 1 0;
+      min-height: 0;
+      display: flex;
+      gap: 12px;
+    }
+
+    .cam-col {
       flex: 0 0 62%;
       min-width: 0;
       display: flex;
       flex-direction: column;
       background: var(--bg-card);
       border: 1px solid var(--border);
+      border-top: 3px solid var(--sec-color);
       border-radius: var(--radius);
       overflow: hidden;
     }
 
-    #camera-header {
+    .panel-col {
+      flex: 1 1 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    .section-entrance { --sec-color: var(--cyan); }
+    .section-room     { --sec-color: var(--amber); }
+
+    .section-title {
+      flex-shrink: 0;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--sec-color);
+      padding: 4px 2px 0;
+    }
+    .section-title span { color: var(--text-dim); font-weight: 500; letter-spacing: 0.04em; text-transform: none; margin-left: 10px; }
+
+    .camera-header {
       flex-shrink: 0;
       height: 36px;
       display: flex;
@@ -115,7 +146,7 @@
       background: var(--bg-header);
     }
 
-    #live-dot {
+    .live-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
@@ -127,21 +158,13 @@
 
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
 
-    #camera-lbl {
+    .camera-lbl {
       font-size: 0.72rem;
-      font-weight: 500;
+      font-weight: 600;
       letter-spacing: 0.12em;
       text-transform: uppercase;
-      color: var(--text-dim);
+      color: var(--sec-color);
     }
-
-    .cam-panel {
-      flex: 1 1 0;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-    }
-    .cam-panel + .cam-panel { border-top: 1px solid var(--border); }
 
     .camera-header-sub {
       margin-left: auto;
@@ -150,7 +173,7 @@
       font-family: "Courier New", monospace;
     }
 
-    #camera-img-wrap, .camera-img-wrap {
+    .camera-img-wrap {
       flex: 1 1 0;
       min-height: 0;
       display: flex;
@@ -159,22 +182,15 @@
       background: #000;
     }
 
-    #camera-img-wrap img, .camera-img-wrap img {
+    .camera-img-wrap img {
       width: 100%;
       height: 100%;
       object-fit: contain;
       display: block;
     }
 
-    /* ── Right: sidebar (38%) ── */
-    #sidebar {
-      flex: 1 1 0;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      overflow: hidden;
-    }
+    .row2 { flex-shrink: 0; display: flex; gap: 10px; }
+    .row2 > * { flex: 1 1 0; min-width: 0; }
 
     /* Generic card */
     .card {
@@ -203,12 +219,12 @@
     }
 
     #session-body {
-      padding: 16px 16px 14px;
+      padding: 12px 16px 10px;
       transition: background 0.3s;
     }
 
     #session-state-val {
-      font-size: 2.4rem;
+      font-size: 1.9rem;
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
@@ -318,6 +334,7 @@
 
     /* ── Detections card ── */
     #det-card { flex-shrink: 0; }
+    #det-list { max-height: 96px; overflow-y: auto; }
 
     #det-list {
       list-style: none;
@@ -354,14 +371,14 @@
     }
 
     /* ── Events card (fills remaining space) ── */
-    #events-card {
+    .events-card {
       flex: 1 1 0;
       min-height: 0;
       display: flex;
       flex-direction: column;
     }
 
-    #events-scroll {
+    .events-scroll {
       flex: 1 1 0;
       overflow-y: auto;
       scrollbar-width: thin;
@@ -417,21 +434,23 @@
     /* ── Responsive ── */
     @media (max-width: 860px) {
       html, body { overflow: auto; }
-      #main { flex-direction: column; height: auto; }
-      #left-col { flex: none; height: 56vw; }
-      #sidebar { flex: none; overflow: visible; }
-      #events-card { flex: none; min-height: 200px; }
-      #events-scroll { overflow-y: visible; }
+      #main { height: auto; }
+      .section { flex-direction: column; flex: none; }
+      .cam-col { flex: none; height: 56vw; }
+      .panel-col { flex: none; overflow: visible; }
+      .events-card { flex: none; min-height: 200px; }
+      .events-scroll { overflow-y: visible; }
     }
   </style>
 </head>
 <body>
+  {% include "_nav.html" %}
 
   <!-- Header -->
   <div id="header">
     <div id="header-left">
       <div id="header-stripe"></div>
-      <div id="header-title">Edge AI PPE Compliance Monitor</div>
+      <div id="header-title">Live monitor</div>
     </div>
     <div id="header-right">
       SYS&nbsp;<span class="h-val" id="h-cam">—</span>
@@ -445,103 +464,108 @@
   <!-- Main -->
   <div id="main">
 
-    <!-- Camera -->
-    <div id="left-col">
-      <div class="cam-panel">
-        <div id="camera-header">
-          <div id="live-dot"></div>
-          <span id="camera-lbl">Entrance — PPE Check</span>
+    <!-- ═════ Entrance: PPE check at the door ═════ -->
+    <div class="section section-entrance">
+      <div class="cam-col">
+        <div class="camera-header">
+          <div class="live-dot"></div>
+          <span class="camera-lbl">Entrance camera — PPE check</span>
+          <span class="camera-header-sub" id="ent-sub">—</span>
         </div>
-        <div id="camera-img-wrap">
+        <div class="camera-img-wrap">
           <img src="/video_feed/entrance" alt="Entrance camera feed">
         </div>
       </div>
-      {% if room_enabled %}
-      <div class="cam-panel">
-        <div id="camera-header">
-          <div id="live-dot"></div>
-          <span id="camera-lbl">Room — Zone Monitoring</span>
+
+      <div class="panel-col">
+        <div class="section-title">Entrance<span>helmet + vest check before entry</span></div>
+
+        <div id="session-card" class="card">
+          <div class="card-hdr">Entry decision</div>
+          <div id="session-body">
+            <div id="session-state-val">IDLE</div>
+            <div id="session-sub">Awaiting personnel</div>
+          </div>
+        </div>
+
+        <div class="row2">
+          <div id="ppe-card" class="card">
+            <div class="card-hdr">PPE status</div>
+            <div class="ppe-row">
+              <span class="ppe-name">Helmet</span>
+              <span id="ppe-helmet" class="ppe-badge ppe-none">—</span>
+            </div>
+            <div class="ppe-row">
+              <span class="ppe-name">Vest</span>
+              <span id="ppe-vest" class="ppe-badge ppe-none">—</span>
+            </div>
+          </div>
+          <div id="det-card" class="card">
+            <div class="card-hdr">Live detections</div>
+            <ul id="det-list">
+              <li><span class="det-empty">No detections</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="card events-card">
+          <div class="card-hdr">Entrance events</div>
+          <div class="events-scroll">
+            <table>
+              <thead>
+                <tr><th>Time</th><th>Decision</th><th>Missing</th></tr>
+              </thead>
+              <tbody id="entrance-events">
+                <tr class="no-events"><td colspan="3">No entrance events yet</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if room_enabled %}
+    <!-- ═════ Room: hazard / restricted zones ═════ -->
+    <div class="section section-room">
+      <div class="cam-col">
+        <div class="camera-header">
+          <div class="live-dot"></div>
+          <span class="camera-lbl">Room camera — zone monitoring</span>
           <span class="camera-header-sub" id="room-sub">—</span>
         </div>
         <div class="camera-img-wrap">
           <img src="/video_feed/room" alt="Room camera feed">
         </div>
       </div>
-      {% endif %}
+
+      <div class="panel-col">
+        <div class="section-title">Room<span>hazard and restricted zones</span></div>
+
+        <div id="room-card" class="card">
+          <div class="card-hdr">Zone status</div>
+          <div id="room-body">
+            <div class="room-row"><span>People in view</span><span id="room-persons">—</span></div>
+            <div id="room-alerts"><span class="room-empty">Nobody in a zone</span></div>
+          </div>
+        </div>
+
+        <div class="card events-card">
+          <div class="card-hdr">Room alerts</div>
+          <div class="events-scroll">
+            <table>
+              <thead>
+                <tr><th>Time</th><th>Alert</th><th>Zone</th></tr>
+              </thead>
+              <tbody id="room-events">
+                <tr class="no-events"><td colspan="3">No room alerts yet</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
+    {% endif %}
 
-    <!-- Sidebar -->
-    <div id="sidebar">
-
-      <!-- Session state -->
-      <div id="session-card" class="card">
-        <div class="card-hdr">Session State</div>
-        <div id="session-body">
-          <div id="session-state-val">IDLE</div>
-          <div id="session-sub">Awaiting personnel</div>
-        </div>
-      </div>
-
-      <!-- Stats -->
-      <div id="stat-row">
-        <div class="stat-card">
-          <div class="stat-lbl">Camera</div>
-          <div class="stat-val" id="s-cam">—</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-lbl">Pipeline FPS</div>
-          <div class="stat-val" id="s-fps">—</div>
-        </div>
-      </div>
-
-      <!-- PPE status -->
-      <div id="ppe-card" class="card">
-        <div class="card-hdr">PPE Status</div>
-        <div class="ppe-row">
-          <span class="ppe-name">Helmet</span>
-          <span id="ppe-helmet" class="ppe-badge ppe-none">—</span>
-        </div>
-        <div class="ppe-row">
-          <span class="ppe-name">Vest</span>
-          <span id="ppe-vest" class="ppe-badge ppe-none">—</span>
-        </div>
-      </div>
-
-      {% if room_enabled %}
-      <!-- Room zones -->
-      <div id="room-card" class="card">
-        <div class="card-hdr">Room Zones</div>
-        <div id="room-body">
-          <div class="room-row"><span>People in view</span><span id="room-persons">—</span></div>
-          <div id="room-alerts"><span class="room-empty">Nobody in a zone</span></div>
-        </div>
-      </div>
-      {% endif %}
-
-      <!-- Live detections -->
-      <div id="det-card" class="card">
-        <div class="card-hdr">Live Detections</div>
-        <ul id="det-list">
-          <li><span class="det-empty">No detections</span></li>
-        </ul>
-      </div>
-
-      <!-- Event history -->
-      <div id="events-card" class="card">
-        <div class="card-hdr">Event History</div>
-        <div id="events-scroll">
-          <table>
-            <thead>
-              <tr><th>Time</th><th>Event</th><th>Where</th><th>Violations</th></tr>
-            </thead>
-            <tbody id="events">
-              <tr class="no-events"><td colspan="4">No events yet</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-    </div><!-- sidebar -->
   </div><!-- main -->
 
   <script>
@@ -570,6 +594,16 @@
       RESTRICTED_ENTRY: { txt: "RESTRICTED",     cls: "ev-restricted" },
     };
 
+    // Hazard alerts name what is missing: NO HELMET / NO VEST / NO HELMET & VEST.
+    function eventLabel(e) {
+      const lbl = EVENT_LABEL[e.event_type] || { txt: e.event_type, cls: "" };
+      if (e.event_type !== "HAZARD_PPE") return lbl;
+      const h = e.violations.includes("no-helmet"), v = e.violations.includes("no-vest");
+      const what = h && v ? "NO HELMET & VEST" : h ? "NO HELMET" : v ? "NO VEST" : "NO PPE";
+      return { txt: "HAZARD — " + what, cls: lbl.cls };
+    }
+
+
     function updateRoom(room) {
       if (!room || !room.enabled) return;
       document.getElementById("room-sub").textContent =
@@ -585,11 +619,32 @@
         if (z.zone_type === "hazard" && z.ppe_ok) {
           cls = "ok"; msg = "PPE OK";
         } else if (z.zone_type === "hazard") {
-          msg = "missing " + z.violations.join(", ") + " · " + z.seconds.toFixed(1) + "s";
+          const h = z.violations.includes("no-helmet"), v = z.violations.includes("no-vest");
+          msg = (h && v ? "no helmet & vest" : h ? "no helmet" : "no vest") + " · " + z.seconds.toFixed(1) + "s";
         } else {
           msg = "NO ENTRY · " + z.seconds.toFixed(1) + "s";
         }
         return `<div class="room-alert ${cls}">#${z.track_id} in ${z.zone}: ${msg}</div>`;
+      }).join("");
+    }
+
+    function renderEvents(id, events, isRoom) {
+      const tbody = document.getElementById(id);
+      if (!tbody) return;   // room panel hidden when the room camera is off
+      const cols = 3;   // room: the alert text already names what is missing
+      if (!events.length) {
+        tbody.innerHTML = `<tr class="no-events"><td colspan="${cols}">${isRoom ? "No room alerts yet" : "No entrance events yet"}</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = events.map(e => {
+        const lbl  = eventLabel(e);
+        const viol = e.violations.length ? e.violations.join(", ") : "—";
+        const zone = isRoom ? `<td>${e.zone || "—"}</td>` : "";
+        return `<tr class="${lbl.cls}">
+          <td>${e.timestamp.slice(11)}</td>
+          <td>${lbl.txt}</td>
+          ${isRoom ? zone : `<td>${viol}</td>`}
+        </tr>`;
       }).join("");
     }
 
@@ -610,7 +665,7 @@
     function updateStatus() {
       tick();
       fetch("/api/status")
-        .then(r => r.json())
+        .then(r => { if (r.status === 401) { location.href = "/login"; throw 0; } return r.json(); })
         .then(data => {
           const state = data.session_state || "unknown";
 
@@ -625,9 +680,8 @@
           document.getElementById("session-sub").textContent =
             SESSION_SUB[state] ?? "";
 
-          // Stats
-          document.getElementById("s-cam").textContent = data.camera_status;
-          document.getElementById("s-fps").textContent = data.fps + " fps";
+          document.getElementById("ent-sub").textContent =
+            data.camera_status + " · " + data.fps + " fps";
 
           // PPE badges
           const dets   = data.detections || [];
@@ -654,26 +708,14 @@
 
           updateRoom(data.room);
 
-          // Events
-          const tbody = document.getElementById("events");
-          if (!data.recent_events.length) {
-            tbody.innerHTML = '<tr class="no-events"><td colspan="4">No events yet</td></tr>';
-            return;
-          }
-          tbody.innerHTML = data.recent_events.map(e => {
-            const lbl   = EVENT_LABEL[e.event_type] || { txt: e.event_type, cls: "" };
-            const viol  = e.violations.length ? e.violations.join(", ") : "—";
-            const where = e.zone ? e.zone : e.camera;
-            return `<tr class="${lbl.cls}">
-              <td>${e.timestamp.slice(11)}</td>
-              <td>${lbl.txt}</td>
-              <td>${where}</td>
-              <td>${viol}</td>
-            </tr>`;
-          }).join("");
+          renderEvents("entrance-events", data.entrance_events || [], false);
+          renderEvents("room-events", data.room_events || [], true);
         })
         .catch(() => {
+          document.getElementById("session-card").className = "card";
           document.getElementById("session-state-val").textContent = "OFFLINE";
+          document.getElementById("session-sub").textContent =
+            "Cannot reach the system — is main.py running?";
         });
     }
 

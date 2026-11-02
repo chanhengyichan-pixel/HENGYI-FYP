@@ -43,6 +43,18 @@ cameras:
     max_failed_reads: 10
     loop_video: true
 
+# How many cameras can run at once depends on the hardware, not on a fixed
+# number. Before starting another camera (startup or the dashboard's
+# Cameras page) the system checks:
+#   max_active          0 = no fixed limit; set e.g. 2 to cap it by hand
+#   min_free_memory_mb  refuse to start one more camera below this free RAM
+#   min_fps             the Cameras page warns when a running camera's AI
+#                       frame rate drops below this (system overloaded)
+camera_capacity:
+  max_active: 0
+  min_free_memory_mb: 350
+  min_fps: 2.0
+
 dashboard:
   host: "0.0.0.0"
   port: 5000

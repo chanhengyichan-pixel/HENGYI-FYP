@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf" content="{{ csrf_token() }}">
+  <title>PPE Monitor — Cameras</title>
+  {% include "_base_style.html" %}
+  <style>
+    #content { max-width: 1180px; margin: 0 auto; padding: 20px 20px 48px; display: flex; flex-direction: column; gap: 18px; }
+    .page-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .page-top p { font-size: 0.92rem; color: var(--text-dim); flex: 1; min-width: 240px; }
+    .page-top .actions { display: flex; gap: 8px; }
+    .btn-add { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-size: 0.9rem; }
+    .btn-add b { font-size: 1.15rem; line-height: 0; font-weight: 500; }
+
+    /* first-time guide */
+    #guide { display: none; background: linear-gradient(135deg, #0b1e27, #111a24); border: 1px solid var(--cyan-dim);
+             border-radius: 12px; padding: 18px 20px; position: relative; }
+    #guide h2 { font-size: 1rem; color: #e2e8f0; font-weight: 650; }
+    #guide .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 14px; }
+    #guide .step { display: flex; gap: 12px; align-items: flex-start; font-size: 0.84rem; color: var(--text-dim); line-height: 1.5; }
+    #guide .step b { display: block; color: var(--text); font-size: 0.9rem; margin-bottom: 2px; }
+    #guide .num { width: 26px; height: 26px; border-radius: 50%; background: var(--cyan); color: #00151c; font-weight: 700;
+                  display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 0.85rem; }
+    #guide .close { position: absolute; top: 10px; right: 12px; background: none; border: none; color: var(--text-dim);
+                    font-size: 1.2rem; cursor: pointer; padding: 4px 8px; }
+
+    section h2 { font-size: 0.95rem; font-weight: 650; color: #e2e8f0; display: flex; align-items: center; gap: 10px; }
+    section h2 .count { font-size: 0.72rem; color: var(--text-dim); font-weight: 600; background: #1a2430; border-radius: 999px; padding: 2px 9px; }
+    section .desc { font-size: 0.82rem; color: var(--text-dim); margin: 4px 0 12px; line-height: 1.5; }
+    .hz { color: var(--amber); } .rs { color: #f87171; } .none { color: var(--text-dim); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 16px; }
+    .empty { border: 1px dashed #2a3b4d; border-radius: 12px; padding: 22px; font-size: 0.85rem; color: var(--text-dim); text-align: center; }
+    .empty a { color: var(--cyan); cursor: pointer; }
+
+    .cam { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column;
+           position: relative; transition: border-color .15s; }
+    .cam:hover { border-color: #2f4a63; }
+    .thumb { position: relative; aspect-ratio: 16 / 10; background: #05080b; display: flex; align-items: center; justify-content: center;
+             color: var(--text-dim); font-size: 0.8rem; text-align: center; border-radius: 12px 12px 0 0; overflow: hidden; cursor: pointer; }
+    .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .thumb .msg { padding: 0 24px; position: relative; }
+    .thumb .pill, .thumb .role-chip { position: absolute; top: 10px; z-index: 1; }
+    .thumb .pill { left: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+    .thumb .role-chip { right: 10px; }
+    .cam.st-disabled .thumb img, .cam.st-error .thumb img, .cam.st-disconnected .thumb img { filter: grayscale(1) brightness(0.4); }
+    .cam-info { padding: 12px 10px 4px 16px; }
+    .name-row { display: flex; align-items: center; gap: 6px; }
+    .cam-name { font-size: 1.05rem; font-weight: 650; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; cursor: pointer; }
+    .kebab { background: none; border: 1px solid transparent; color: var(--text-dim); width: 32px; height: 32px; border-radius: 8px;
+             cursor: pointer; font-size: 1.2rem; line-height: 1; flex-shrink: 0; }
+    .kebab:hover, .kebab[aria-expanded="true"] { background: #1a2430; color: var(--text); border-color: var(--border); }
+    .menu { position: absolute; right: 10px; top: calc(100% - 4px); z-index: 30; min-width: 190px; background: #111a24;
+            border: 1px solid #2a3b4d; border-radius: 10px; padding: 6px; box-shadow: 0 12px 30px rgba(0,0,0,.5); display: none; }
+    .menu.open { display: block; }
+    .menu button { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: none; color: var(--text);
+                   font: inherit; font-size: 0.86rem; padding: 9px 10px; border-radius: 6px; cursor: pointer; text-align: left; }
+    .menu button:hover { background: #1a2430; }
+    .menu button.danger { color: #f87171; }
+    .menu hr { border: none; border-top: 1px solid var(--border); margin: 5px 4px; }
+    .menu svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .name-wrap { position: relative; }
+    .rows { margin-top: 8px; padding-right: 6px; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; font-size: 0.8rem; }
+    .rows dt { color: var(--text-dim); }
+    .rows dd { color: var(--text); display: flex; justify-content: flex-end; min-width: 0; }
+    .cam .err-box { margin: 10px 16px 0; }
+    .cam-foot { padding: 12px 16px 16px; margin-top: auto; }
+    .cam-foot .btn { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+    .cam-foot svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .busy-veil { position: absolute; inset: 0; background: rgba(10,14,20,.7); border-radius: 12px; display: none; z-index: 20;
+                 align-items: center; justify-content: center; gap: 10px; color: var(--text); font-size: 0.88rem; }
+    .cam.busy .busy-veil { display: flex; }
+    .spinner { width: 22px; height: 22px; border: 3px solid var(--border); border-top-color: var(--cyan); border-radius: 50%; animation: spin .9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Add Camera dialog */
+    dialog { margin: auto; background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: 14px;
+             padding: 0; width: min(600px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+    dialog::backdrop { background: rgba(4,8,12,.72); }
+    .dlg-head { padding: 20px 22px 4px; display: flex; align-items: flex-start; gap: 12px; }
+    .dlg-head h3 { font-size: 1.1rem; color: #e2e8f0; }
+    .dlg-head p { font-size: 0.83rem; color: var(--text-dim); margin-top: 4px; line-height: 1.5; }
+    .dlg-head .x { margin-left: auto; background: none; border: none; color: var(--text-dim); font-size: 1.2rem; cursor: pointer; padding: 2px 6px; }
+    .steps-dots { font-size: 0.7rem; letter-spacing: .12em; text-transform: uppercase; color: var(--cyan); font-weight: 700; margin-bottom: 4px; }
+    .dlg-body { padding: 10px 22px 6px; }
+    .purpose { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .opt { text-align: left; background: #0c1117; border: 2px solid var(--border); border-radius: 12px; padding: 16px; cursor: pointer;
+           color: var(--text); font: inherit; display: flex; flex-direction: column; gap: 8px; transition: all .15s; }
+    .opt:hover { border-color: var(--oc); background: #0f171f; transform: translateY(-1px); }
+    .opt .ic { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+               background: color-mix(in srgb, var(--oc) 16%, transparent); color: var(--oc); }
+    .opt .ic svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .opt b { font-size: 0.98rem; color: #e2e8f0; }
+    .opt .what { font-size: 0.8rem; color: var(--text-dim); line-height: 1.5; }
+    .opt ul { list-style: none; font-size: 0.78rem; color: var(--text); display: flex; flex-direction: column; gap: 4px; }
+    .opt li::before { content: "✓ "; color: var(--oc); font-weight: 700; }
+    .opt.ent { --oc: var(--cyan); } .opt.room { --oc: var(--amber); }
+    .chosen { display: inline-flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--text-dim); }
+    .chosen a { color: var(--cyan); cursor: pointer; }
+    .dlg-prev { position: relative; margin-top: 10px; aspect-ratio: 16 / 9; background: #05080b; border-radius: 8px; overflow: hidden; display: flex;
+                align-items: center; justify-content: center; color: var(--text-dim); font-size: 0.8rem; text-align: center; }
+    .dlg-prev img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    .dlg-prev .msg { padding: 0 16px; position: relative; }
+    .dlg-foot { display: flex; gap: 10px; align-items: center; padding: 16px 22px 20px; }
+    .dlg-foot .sp { flex: 1; }
+    #dlg-err { color: #fca5a5; font-size: 0.82rem; min-height: 1em; margin-top: 10px; line-height: 1.45; }
+    #dlg-cap { display: none; margin-top: 12px; }
+    @media (max-width: 760px) { #guide .steps, .purpose { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  {% include "_nav.html" %}
+  <div id="header">
+    <div id="header-left">
+      <div id="header-stripe"></div>
+      <div id="header-title">Cameras</div>
+    </div>
+  </div>
+
+  <div id="content">
+    {% include "_camera_kit.html" %}
+
+    <div class="page-top">
+      <p>Every camera has one job: check people at the entrance, or watch a work area.</p>
+      <div class="actions">
+        <button class="btn btn-ghost" id="b-detect" title="Look again for USB / Raspberry Pi cameras plugged into this machine">Find cameras</button>
+        <button class="btn btn-add" id="b-add"><b>+</b> Add Camera</button>
+      </div>
+    </div>
+
+    <div class="cap-warn" id="cap-warn"></div>
+    {% if not live %}<div class="cap-warn" style="display:flex">Changes are saved and apply the next time main.py starts.</div>{% endif %}
+
+    <div id="guide">
+      <button class="close" id="guide-close" title="Hide">✕</button>
+      <h2>Set up your cameras</h2>
+      <div class="steps">
+        <div class="step"><span class="num">1</span><div><b>Check each camera</b>Make sure the picture shows the right place. Use the ⋮ menu or Edit to change name or source.</div></div>
+        <div class="step"><span class="num">2</span><div><b>Add more with + Add Camera</b>Choose Entrance inspection or Room monitoring, pick the camera, test the picture, save.</div></div>
+        <div class="step"><span class="num">3</span><div><b>Draw room zones</b>For each room camera: Edit → Zones, then mark the hazard and restricted areas.</div></div>
+      </div>
+    </div>
+
+    <section>
+      <h2>Entrance inspection <span class="count" id="n-entrance">0</span></h2>
+      <p class="desc">Checks every person for a helmet and a safety vest at the door, then allows or denies entry. No zones.</p>
+      <div class="grid" id="g-entrance"></div>
+    </section>
+
+    <section>
+      <h2>Room monitoring <span class="count" id="n-room">0</span></h2>
+      <p class="desc">Watches a work area. Each room camera has its own zones: <b class="hz">hazard</b> (PPE required inside) and <b class="rs">restricted</b> (nobody may enter).</p>
+      <div class="grid" id="g-room"></div>
+    </section>
+  </div>
+
+  <dialog id="dlg" aria-labelledby="dlg-title">
+    <!-- step 1: purpose -->
+    <div id="step1">
+      <div class="dlg-head">
+        <div><div class="steps-dots">Step 1 of 2</div><h3 id="dlg-title">What is this camera for?</h3>
+          <p>The purpose decides what the AI checks. You can add as many of each as the hardware can run.</p></div>
+        <button class="x" data-close title="Close">✕</button>
+      </div>
+      <div class="dlg-body">
+        <div class="purpose">
+          <button class="opt ent" data-role="entrance">
+            <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M3 21h18M11 12h.01M15 7l5 2v12"/></svg></span>
+            <b>Entrance Inspection</b>
+            <span class="what">Points at the door. Each person stops in front of it before going in.</span>
+            <ul><li>Checks helmet + safety vest</li><li>Allows or denies entry (LED + voice)</li><li>No zones to draw</li></ul>
+          </button>
+          <button class="opt room" data-role="room">
+            <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/><path d="M3 14l6-5 4 4 3-3 5 4"/></svg></span>
+            <b>Room Monitoring</b>
+            <span class="what">Watches a work area inside, from above. Follows everyone in view.</span>
+            <ul><li>Hazard zones: PPE required</li><li>Restricted zones: no entry</li><li>You draw the zones next</li></ul>
+          </button>
+        </div>
+      </div>
+      <div class="dlg-foot"><span class="sp"></span><button class="btn btn-ghost" data-close>Cancel</button></div>
+    </div>
+    <!-- step 2: configuration -->
+    <form id="step2" style="display:none" autocomplete="off">
+      <div class="dlg-head">
+        <div><div class="steps-dots">Step 2 of 2</div><h3 id="dlg2-title">Set up the camera</h3>
+          <span class="chosen" id="chosen"></span></div>
+        <button type="button" class="x" data-close title="Close">✕</button>
+      </div>
+      <div class="dlg-body">
+        <label for="dlg-name">Camera name</label>
+        <input id="dlg-name" maxlength="40" required>
+        <label for="dlg-src">Camera source</label>
+        <div class="src-row">
+          <select id="dlg-src"></select>
+          <button type="button" class="btn btn-ghost" id="dlg-test">Test camera</button>
+        </div>
+        <div class="dlg-prev" id="dlg-prev"><span class="msg">Press Test camera to see its picture.</span></div>
+        <div class="cap-warn" id="dlg-cap"></div>
+        <div id="dlg-err"></div>
+      </div>
+      <div class="dlg-foot">
+        <button type="button" class="btn btn-ghost" id="dlg-back">← Back</button>
+        <span class="sp"></span>
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn" id="dlg-ok">Save Camera</button>
+      </div>
+    </form>
+  </dialog>
+
+<script>
+(() => {
+  const K = window.CamKit, $ = id => document.getElementById(id);
+  const ICONS = {
+    edit: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+    restart: '<svg viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></svg>',
+    disable: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>',
+    enable: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M10 8l6 4-6 4z"/></svg>',
+    remove: '<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>',
+  };
+  let data = null, cams = [], detected = [];
+
+  const editUrl = (c, tab) => `/settings/cameras/${encodeURIComponent(c.id)}${tab ? "?tab=" + tab : ""}`;
+  function zonesText(z) {
+    if (!z) return "";
+    if (!z.hazard && !z.restricted) return `<span class="none">None yet</span>`;
+    return [z.hazard ? `<span class="hz">${z.hazard} hazard</span>` : "", z.restricted ? `<span class="rs">&nbsp;${z.restricted} restricted</span>` : ""].join("");
+  }
+  function card(c) {
+    const problem = c.status === "error" || c.status === "disconnected";
+    return `
+      <div class="cam st-${c.status}" data-id="${K.esc(c.id)}">
+        <div class="thumb" data-go="edit">
+          <span class="pill ${c.status}">${K.STATUS[c.status]}</span>
+          <span class="role-chip role-${c.role}">${c.role === "entrance" ? "Entrance" : "Room"}</span>
+          <span class="msg">${c.status === "disabled" ? "Camera is disabled" : problem ? "" : "Loading picture…"}</span>
+        </div>
+        ${problem ? `<div class="err-box ${c.status}"><div><b>${c.status === "error" ? "Camera error" : "Camera disconnected"}</b>${K.esc(c.error || "")}</div>
+          <button class="btn" data-act="retry">Retry</button></div>` : ""}
+        <div class="cam-info">
+          <div class="name-wrap">
+            <div class="name-row">
+              <div class="cam-name" data-go="edit" title="${K.esc(c.name)}">${K.esc(c.name)}</div>
+              <button class="kebab" data-menu aria-haspopup="true" aria-expanded="false" title="Camera actions">⋮</button>
+            </div>
+            <div class="menu" role="menu">
+              <button data-act="edit" role="menuitem">${ICONS.edit}Edit Camera</button>
+              ${c.status !== "disabled" ? `<button data-act="restart" role="menuitem">${ICONS.restart}Restart Camera</button>
+                 <button data-act="disable" role="menuitem">${ICONS.disable}Disable Camera</button>`
+               : `<button data-act="enable" role="menuitem">${ICONS.enable}Enable Camera</button>`}
+              <hr><button data-act="remove" class="danger" role="menuitem">${ICONS.remove}Remove Camera</button>
+            </div>
+          </div>
+          <dl class="rows">
+            <dt>Source</dt><dd>${K.sourceHtml(c)}</dd>
+            ${c.role === "entrance" ? `<dt>Checks</dt><dd>Helmet + vest</dd>` : `<dt>Zones</dt><dd>${zonesText(c.zones)}</dd>`}
+          </dl>
+        </div>
+        <div class="cam-foot">
+          <a class="btn btn-soft" href="${editUrl(c)}" style="text-decoration:none">${ICONS.edit}${c.role === "room" ? "Edit camera & zones" : "Edit camera"}</a>
+        </div>
+        <div class="busy-veil"><div class="spinner"></div><span class="busy-text">Working…</span></div>
+      </div>`;
+  }
+  function render() {
+    for (const role of ["entrance", "room"]) {
+      const list = cams.filter(c => c.role === role);
+      $("n-" + role).textContent = list.length;
+      $("g-" + role).innerHTML = list.length ? list.map(card).join("")
+        : `<div class="empty">No ${role === "entrance" ? "entrance inspection" : "room monitoring"} camera yet. <a data-add="${role}">+ Add one</a></div>`;
+    }
+    cams.forEach(c => c.status === "running" && loadThumb(c, false));
+  }
+  function loadThumb(c, keep) {
+    const box = document.querySelector(`.cam[data-id="${c.id}"] .thumb`);
+    if (box) K.showPicture(box, c, keep).then(ok => { if (!ok && !keep) box.querySelector(".msg").textContent = "No picture yet"; });
+  }
+  function apply(d) {
+    data = d; cams = d.cameras; render(); K.capacityBanner($("cap-warn"), d); return d;
+  }
+
+  // ── card menu + actions ──
+  function closeMenus(except) {
+    document.querySelectorAll(".menu.open").forEach(m => { if (m !== except) { m.classList.remove("open"); m.parentElement.querySelector("[data-menu]").setAttribute("aria-expanded", "false"); } });
+  }
+  document.addEventListener("click", e => { if (!e.target.closest(".name-wrap")) closeMenus(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenus(); });
+  const CONFIRM = {
+    disable: c => `Disable "${c.name}"? It stops checking people until you enable it again.`,
+    remove: c => `Remove "${c.name}"?\n\nIts AI processing stops and the camera is released. Saved zones and event history are kept.`,
+  };
+  const BUSY = { restart: "Restarting…", retry: "Connecting…", disable: "Stopping…", enable: "Starting…", remove: "Removing…" };
+  document.querySelector("#content").addEventListener("click", e => {
+    const add = e.target.closest("[data-add]");
+    if (add) return openAdd(add.dataset.add);
+    const cardEl = e.target.closest(".cam"); if (!cardEl) return;
+    const c = cams.find(x => x.id === cardEl.dataset.id);
+    const menuBtn = e.target.closest("[data-menu]");
+    if (menuBtn) {
+      const m = cardEl.querySelector(".menu"), open = !m.classList.contains("open");
+      closeMenus(m); m.classList.toggle("open", open); menuBtn.setAttribute("aria-expanded", open);
+      if (open) m.querySelector("button").focus();
+      return;
+    }
+    if (e.target.closest("[data-go]")) { location.href = editUrl(c); return; }
+    const b = e.target.closest("[data-act]"); if (!b) return;
+    const act = b.dataset.act;
+    closeMenus();
+    if (act === "edit") { location.href = editUrl(c); return; }
+    if (CONFIRM[act] && !confirm(CONFIRM[act](c))) return;
+    cardEl.classList.add("busy"); cardEl.querySelector(".busy-text").textContent = BUSY[act] || "Working…";
+    K.api.act(c.id, act).then(d => K.report(apply(d)))
+      .catch(err => { cardEl.classList.remove("busy"); K.toast(err.message, true); });
+  });
+
+  // ── Add Camera dialog ──
+  const dlg = $("dlg"), draft = { id: "", role: "room", name: "", enabled: true, backend: "opencv", source: "" };
+  const ROLE_LABEL = { entrance: "Entrance Inspection", room: "Room Monitoring" };
+  function openAdd(role) {
+    $("step1").style.display = ""; $("step2").style.display = "none";
+    dlg.showModal();
+    if (role) choose(role);
+  }
+  function choose(role) {
+    const used = new Set(cams.filter(c => c.enabled).map(K.srcKey));
+    const free = detected.find(d => !used.has(K.srcKey(d)));
+    const n = cams.filter(c => c.role === role).length + 1;
+    Object.assign(draft, { id: data.next_ids[role], role, backend: free ? free.backend : "opencv", source: free ? free.source : "" });
+    $("dlg-name").value = (role === "entrance" ? "Entrance" : "Room") + (n > 1 || role === "room" ? " " + n : "");
+    $("chosen").innerHTML = `<span class="role-chip role-${role}">${role === "entrance" ? "Entrance" : "Room"}</span> ${ROLE_LABEL[role]} · <a id="dlg-change">change</a>`;
+    $("dlg-change").onclick = () => { $("step2").style.display = "none"; $("step1").style.display = ""; };
+    $("dlg-src").innerHTML = K.sourceOptions(draft, detected, cams);
+    $("dlg-err").textContent = "";
+    $("dlg-ok").disabled = false;
+    const cap = data.capacity && data.capacity.add_problem;
+    $("dlg-cap").style.display = cap ? "flex" : "none";
+    $("dlg-cap").innerHTML = cap ? `<div><b>This system cannot start another camera right now.</b> ${K.esc(cap)} The camera will be saved as Disabled.</div>` : "";
+    $("dlg-prev").querySelector("img")?.remove();
+    $("dlg-prev").querySelector(".msg").textContent = draft.source === "" ? "Choose a camera source." : "Press Test camera to see its picture.";
+    $("step1").style.display = "none"; $("step2").style.display = "";
+    if (draft.source !== "") testCamera();
+    setTimeout(() => $("dlg-name").select(), 0);
+  }
+  function testCamera() {
+    if (draft.source === "" || draft.source == null) { $("dlg-prev").querySelector(".msg").textContent = "Choose a camera source first."; return; }
+    K.showPicture($("dlg-prev"), draft);
+  }
+  dlg.querySelectorAll(".opt").forEach(b => b.onclick = () => choose(b.dataset.role));
+  dlg.querySelectorAll("[data-close]").forEach(b => b.onclick = () => dlg.close());
+  $("dlg-back").onclick = () => { $("step2").style.display = "none"; $("step1").style.display = ""; };
+  $("dlg-test").onclick = testCamera;
+  $("dlg-src").onchange = e => {
+    if (K.pickSource(draft, e.target.value)) testCamera();
+    e.target.innerHTML = K.sourceOptions(draft, detected, cams);
+  };
+  $("step2").onsubmit = e => {
+    e.preventDefault();
+    if (draft.source === "" || draft.source == null) { $("dlg-err").textContent = "Choose a camera source."; return; }
+    $("dlg-ok").disabled = true; $("dlg-ok").textContent = "Starting camera…"; $("dlg-err").textContent = "";
+    K.api.add({ role: draft.role, name: $("dlg-name").value.trim(), backend: draft.backend, source: draft.source })
+      .then(d => {
+        apply(d); dlg.close(); K.report(d);
+        const c = d.cameras.find(x => x.id === d.id);
+        if (c && c.role === "room" && c.status === "running") location.href = editUrl(c, "zones") + "&added=1";
+      })
+      .catch(err => { $("dlg-err").textContent = err.message; })
+      .finally(() => { $("dlg-ok").disabled = false; $("dlg-ok").textContent = "Save Camera"; });
+  };
+  $("b-add").onclick = () => openAdd();
+
+  // ── first-time guide ──
+  function showGuide() {
+    let hidden = false;
+    try { hidden = localStorage.getItem("cam-guide-hidden") === "1"; } catch (e) {}
+    $("guide").style.display = data.from === "config.yaml" && !hidden ? "block" : "none";
+  }
+  $("guide-close").onclick = () => { try { localStorage.setItem("cam-guide-hidden", "1"); } catch (e) {} $("guide").style.display = "none"; };
+
+  $("b-detect").onclick = () => {
+    $("b-detect").disabled = true;
+    K.api.detect().then(d => { detected = d; K.toast(`Found ${d.length} camera${d.length === 1 ? "" : "s"} on this machine.`); })
+      .finally(() => $("b-detect").disabled = false);
+  };
+
+  Promise.all([K.api.data(), K.api.detect()]).then(([d, det]) => { detected = det; apply(d); showGuide(); })
+    .catch(err => K.toast(err.message, true));
+
+  // Keep pictures and statuses fresh (a camera can disconnect at any time).
+  setInterval(() => {
+    if (document.hidden || dlg.open || document.querySelector(".menu.open, .cam.busy")) return;
+    K.api.data().then(d => {
+      const sig = l => JSON.stringify(l.map(({ fps, ...rest }) => rest));
+      const changed = sig(d.cameras) !== sig(cams);
+      if (changed) apply(d); else { K.capacityBanner($("cap-warn"), d); data = d; cams.filter(c => c.status === "running").forEach(c => loadThumb(c, true)); }
+    }).catch(() => {});
+  }, 4000);
+})();
+</script>
+</body>
+</html>

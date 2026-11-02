@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PPE Monitor — Settings</title>
+  <title>PPE Monitor — Accounts</title>
   {% include "_base_style.html" %}
   <style>
     #content { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
@@ -36,15 +36,11 @@
   <div id="header">
     <div id="header-left">
       <div id="header-stripe"></div>
-      <div id="header-title">Settings</div>
+      <div id="header-title">Accounts</div>
     </div>
   </div>
 
   <div id="content">
-    <div class="subtabs">
-      <a href="{{ url_for('settings') }}" class="on">Accounts</a>
-      <a href="{{ url_for('settings_zones') }}">Room camera zones</a>
-    </div>
     {% with msgs = get_flashed_messages(with_categories=true) %}
       {% for cat, m in msgs %}<div class="msg {{ cat }} flashes">{{ m }}</div>{% endfor %}
     {% endwith %}
@@ -52,7 +48,7 @@
     <div class="card">
       <div class="card-hdr">Accounts</div>
       <div class="roles-help">
-        <b>Admin</b>: everything, including this Settings page. &nbsp;
+        <b>Admin</b>: everything, including the Cameras and Accounts pages. &nbsp;
         <b>Viewer</b>: live view and history only, cannot change settings.
       </div>
       <table>

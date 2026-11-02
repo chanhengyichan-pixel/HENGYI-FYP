@@ -122,26 +122,42 @@ def zones_to_areas(zones) -> list[dict]:
             for z in zones]
 
 
-def load_active_zones(config: dict) -> tuple[list[Zone], str]:
-    """Zones the system should use, and where they came from:
-    the saved web-editor file if it exists, else config.yaml."""
+def _read_file(path: str) -> dict:
+    """{camera_id: [area, ...]} from the zones file. The old single-camera
+    format {"zones": [...]} belongs to the first room camera, "room"."""
     import json
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if "cameras" in data:
+        return dict(data["cameras"])
+    return {"room": data.get("zones", [])}
+
+
+def load_active_zones(config: dict, camera_id: str = "room") -> tuple[list[Zone], str]:
+    """Zones one room camera should use, and where they came from: the
+    saved web-editor file if it has this camera, else config.yaml (whose
+    zones.areas belong to the first room camera, "room")."""
     import os
     path = zones_file(config)
     if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            return zones_from_areas(json.load(f)["zones"]), path
-    return load_zones(config), "config.yaml"
+        per_cam = _read_file(path)
+        if camera_id in per_cam:
+            return zones_from_areas(per_cam[camera_id]), path
+    if camera_id == "room":
+        return load_zones(config), "config.yaml"
+    return [], "none yet"
 
 
-def save_zones(config: dict, zones) -> str:
-    """Write zones to the JSON file atomically; return the path."""
+def save_zones(config: dict, zones, camera_id: str = "room") -> str:
+    """Write one camera's zones (other cameras' zones are kept); return the path."""
     import json
     import os
     path = zones_file(config)
+    per_cam = _read_file(path) if os.path.exists(path) else {}
+    per_cam[camera_id] = zones_to_areas(zones)
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"zones": zones_to_areas(zones)}, f, indent=2)
+        json.dump({"cameras": per_cam}, f, indent=2)
     os.replace(tmp, path)
     return path

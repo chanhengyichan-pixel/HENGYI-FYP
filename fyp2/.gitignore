@@ -21,7 +21,8 @@ output/screenshots/*
 output/*.db
 output/*.jpg
 output/.dashboard_secret   # session signing key, generated on first start
-output/zones.json          # zones drawn in Settings > Room zones (site-specific)
+output/zones.json          # zones drawn in Settings > Room camera zones (site-specific)
+output/cameras.json        # camera setup from Settings > Cameras (site-specific)
 
 # NCNN exports (regenerate on the Pi) and recorded test videos
 *_ncnn_model/

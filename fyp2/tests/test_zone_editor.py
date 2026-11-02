@@ -73,7 +73,7 @@ def admin(tmp_path):
         html = client.get("/login").get_data(as_text=True)
         tok = re.search(r'name="csrf" value="([0-9a-f]+)"', html).group(1)
         client.post("/login", data={"username": name, "password": "secret1", "csrf": tok})
-        html = client.get("/settings/zones" if name == "boss" else "/").get_data(as_text=True)
+        html = client.get("/settings/cameras" if name == "boss" else "/").get_data(as_text=True)
         m = re.search(r'name="csrf"(?: content|.*?value)="([0-9a-f]+)"', html)
         return m.group(1) if m else None
     return client, zm, cfg, login
@@ -88,7 +88,7 @@ class TestEditorRoutes:
         assert r.status_code == 200 and r.get_json()["ok"]
         assert [z.name for z in zm.zones] == ["Machine area"]
         saved = json.load(open(cfg["zones"]["file"]))
-        assert saved["zones"][0]["polygon"][1] == [100.0, 0.0]
+        assert saved["cameras"]["room"][0]["polygon"][1] == [100.0, 0.0]
         assert client.get("/api/status").get_json()["room"]["zones"][0]["name"] == "Machine area"
 
     def test_bad_zone_rejected_and_nothing_changes(self, admin):
@@ -107,7 +107,11 @@ class TestEditorRoutes:
     def test_frame_and_page(self, admin):
         client, _, _, login = admin
         login("boss")
-        assert client.get("/settings/zones").status_code == 200
+        assert client.get("/settings/zones").status_code == 302      # moved to the camera page
+        page = client.get("/settings/cameras/room?tab=zones").get_data(as_text=True)
+        assert 'id="p-zones"' in page and "b-add" in page
+        assert 'id="p-zones"' not in client.get("/settings/cameras/entrance").get_data(as_text=True)
+        assert client.get("/settings/cameras/nope").status_code == 404
         r = client.get("/settings/zones/frame.jpg")
         assert r.status_code == 200 and r.mimetype == "image/jpeg"
 
@@ -115,5 +119,6 @@ class TestEditorRoutes:
         client, _, _, login = admin
         login("guard")
         assert client.get("/settings/zones").status_code == 403
+        assert client.get("/settings/cameras/room").status_code == 403
         assert client.get("/settings/zones/frame.jpg").status_code == 403
         assert client.get("/settings/zones/data").status_code == 403

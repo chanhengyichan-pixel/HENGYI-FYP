@@ -29,7 +29,8 @@ _FPS_WINDOW = 30
 
 class RoomPipeline:
     def __init__(self, config, shared_state, detector, decision_engine,
-                 zone_monitor, alert_manager=None):
+                 zone_monitor, alert_manager=None, name: str = "room"):
+        self._name = name
         self._shared_state = shared_state
         self._detector = detector
         self._decision_engine = decision_engine
@@ -46,9 +47,9 @@ class RoomPipeline:
     def start(self):
         self._running = True
         self._thread = threading.Thread(target=self._loop, daemon=True,
-                                        name="RoomPipelineThread")
+                                        name=f"RoomPipelineThread-{self._name}")
         self._thread.start()
-        logger.info("Room pipeline started.")
+        logger.info("Room pipeline started (%s).", self._name)
 
     def stop(self):
         self._running = False
@@ -60,12 +61,12 @@ class RoomPipeline:
         while self._running:
             if self._shared_state.get_camera_status() == "disconnected":
                 if not self._was_disconnected:
-                    logger.warning("Room camera disconnected — zone monitoring paused.")
+                    logger.warning("Room camera %s disconnected — zone monitoring paused.", self._name)
                     self._was_disconnected = True
                 time.sleep(0.1)
                 continue
             if self._was_disconnected:
-                logger.info("Room camera reconnected — zone monitoring resumed.")
+                logger.info("Room camera %s reconnected — zone monitoring resumed.", self._name)
                 self._was_disconnected = False
 
             frame, frame_id = self._shared_state.get_frame_with_id()
@@ -83,7 +84,7 @@ class RoomPipeline:
                 fps = (len(self._ts_window) - 1) / elapsed if elapsed > 0 else 0.0
                 self._shared_state.set_fps(fps)
                 if t_start - self._last_fps_log_time >= 5.0:
-                    logger.info("Room pipeline FPS: %.1f", fps)
+                    logger.info("Room pipeline FPS (%s): %.1f", self._name, fps)
                     self._last_fps_log_time = t_start
 
         logger.info("Room pipeline loop exited.")

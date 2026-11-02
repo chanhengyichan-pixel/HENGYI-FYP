@@ -8,6 +8,8 @@ from flask import Flask, Response, abort, jsonify, render_template, request, sen
 
 from dashboard.auth import init_auth
 from dashboard.zone_editor import init_zone_editor
+from dashboard.camera_setup import init_camera_setup
+from core.camera_registry import load_cameras
 
 logger = logging.getLogger(__name__)
 
@@ -212,35 +214,80 @@ def _draw_room_detections(frame, detections, zone_status):
 
 
 def create_app(config: dict, states: dict, event_store, zones=None, user_store=None,
-               zone_monitor=None):
+               zone_monitor=None, zone_monitors=None, cameras=None, on_restart=None,
+               manager=None):
     """
-    states     : {"entrance": SharedState, "room": SharedState | None}
-    zones      : list of core.zones.Zone drawn on the room stream (static;
-                 ignored when zone_monitor is given)
-    zone_monitor : the running ZoneMonitor; zones are read from it every
-                 frame and the Settings > Room zones editor updates it live
-    user_store : storage.user_store.UserStore (dashboard accounts); created
-                 from config when not given
+    states        : {"entrance": SharedState, "<room id>": SharedState, ...}
+                    (a None value = that camera is off)
+    zone_monitors : {"<room id>": ZoneMonitor} for the running room cameras;
+                    zones are read from them every frame and the zone editor
+                    updates them live. zone_monitor= is the older single-room
+                    form (same as {"room": zone_monitor}).
+    zones         : static zones for "room" when no ZoneMonitor is given (tests)
+    cameras       : camera list from core.camera_registry (names for the
+                    dashboard); derived from states when not given
+    on_restart    : restarts the whole of main.py (kept as a fallback)
+    manager       : core.camera_manager.CameraManager. When given, the
+                    Cameras page starts / stops single cameras live, and
+                    the camera lists below are re-read on every request
+                    (states / zone_monitors are the manager's own dicts).
+    user_store    : storage.user_store.UserStore (dashboard accounts)
     """
     app = Flask(__name__)
     if user_store is None:
         from storage.user_store import UserStore
         user_store = UserStore(config)
     init_auth(app, config, user_store)
-    static_zones = zones or []
 
-    def current_zones():
-        return zone_monitor.zones if zone_monitor is not None else static_zones
+    zone_monitors = dict(zone_monitors or {})
+    if zone_monitor is not None:
+        zone_monitors.setdefault("room", zone_monitor)
+    static_zones = {"room": list(zones or [])}
 
-    def apply_zones(new_zones):
-        if zone_monitor is not None:
-            zone_monitor.set_zones(new_zones)
+    def zones_for(cid):
+        zm = zone_monitors.get(cid)
+        return zm.zones if zm is not None else static_zones.get(cid, [])
+
+    def apply_zones(cid, new_zones):
+        if cid in zone_monitors:
+            zone_monitors[cid].set_zones(new_zones)
         else:
-            static_zones[:] = new_zones
+            static_zones[cid] = list(new_zones)
 
     entrance = states["entrance"]
-    room = states.get("room")
-    init_zone_editor(app, config, room, current_zones, apply_zones)
+    if cameras is None:
+        cameras = [{"id": "entrance", "role": "entrance", "name": "Entrance", "enabled": True}]
+        cameras += [{"id": cid, "role": "room", "enabled": True,
+                     "name": "Room" if cid == "room" else f"Room {cid[4:]}"}
+                    for cid, st in states.items() if cid != "entrance" and st is not None]
+
+    def cams_now():
+        """Current camera list (live with a manager: cameras come and go)."""
+        if manager is not None:
+            try:
+                return load_cameras(config)[0]
+            except (ValueError, KeyError, OSError):
+                pass
+        return cameras
+
+    def live_cams(role):
+        """Cameras of this role that have a video state (running or tried)."""
+        return [{"id": c["id"], "name": c["name"]} for c in cams_now()
+                if c["role"] == role and c.get("enabled", True) and states.get(c["id"]) is not None]
+
+    def room_ids_now():
+        return [c["id"] for c in live_cams("room")]
+
+    def running_room_ids():
+        if manager is not None:
+            return list(zone_monitors)
+        return room_ids_now()
+
+    def cam_names():
+        return {c["id"]: c["name"] for c in cams_now()}
+
+    init_zone_editor(app, config, states, running_room_ids, zones_for, apply_zones)
+    init_camera_setup(app, config, states, cameras, on_restart, zones_for, manager=manager)
     screenshot_dir = Path(config["alerts"]["screenshot_dir"]).resolve()
 
     # Calibration/diagnostic flag — see config.yaml's decision_engine
@@ -248,22 +295,48 @@ def create_app(config: dict, states: dict, event_store, zones=None, user_store=N
     # at construction (config does not change at runtime), not per-frame.
     debug_overlay_enabled = bool(config["decision_engine"].get("debug_overlay", False))
 
+    def _status_frame(frame, camera):
+        """Dimmed last picture (or a blank one) with the camera's problem written on it."""
+        info = manager.status(camera) if manager is not None else {"status": "starting", "error": None}
+        title = {"error": "CAMERA ERROR", "disconnected": "CAMERA DISCONNECTED",
+                 "stopped": "CAMERA STOPPED"}.get(info["status"], "WAITING FOR CAMERA")
+        img = (frame // 4) if frame is not None else np.zeros((360, 640, 3), np.uint8)
+        h, w = img.shape[:2]
+        scale = w / 640
+        for i, (text, size, color) in enumerate([(title, 0.9, (80, 80, 240)),
+                                                 ((info.get("error") or "")[:70], 0.5, (220, 220, 220))]):
+            if not text:
+                continue
+            (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, size * scale, 1)
+            cv2.putText(img, text, ((w - tw) // 2, int(h / 2 + i * 34 * scale)),
+                        cv2.FONT_HERSHEY_DUPLEX, size * scale, color, max(1, int(scale)), cv2.LINE_AA)
+        return img
+
     def _generate_frames(camera: str):
         state = states[camera]
+        waited = 0.0
         while True:
             frame = state.get_frame()
+            running = manager is None or manager.status(camera)["status"] == "running"
 
-            if frame is None:
-                # No frame yet — wait briefly and retry rather than crashing.
-                time.sleep(0.05)
+            if frame is None or not running:
+                # No (live) picture: after a short wait show why, once a second.
+                if running and waited < 1.0:
+                    time.sleep(0.05)
+                    waited += 0.05
+                    continue
+                ok, buffer = cv2.imencode(".jpg", _status_frame(frame, camera))
+                yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
+                time.sleep(1.0)
                 continue
+            waited = 0.0
 
             # Read detections separately; slight temporal mismatch is
             # acceptable (see _draw_detections docstring).
             detections = state.get_latest_detections()
-            if camera == "room":
+            if not camera.startswith("entrance"):
                 zone_status = state.get_zone_status()
-                _draw_zones(frame, current_zones(), zone_status)
+                _draw_zones(frame, zones_for(camera), zone_status)
                 _draw_room_detections(frame, detections, zone_status)
             else:
                 _draw_detections(frame, detections)
@@ -293,40 +366,73 @@ def create_app(config: dict, states: dict, event_store, zones=None, user_store=N
             mimetype="multipart/x-mixed-replace; boundary=frame",
         )
 
+    def _entrance_block(cid, name):
+        st = states[cid]
+        session_state = st.get_session_state()
+        return {
+            "id": cid,
+            "name": name,
+            "session_state": session_state.value if session_state is not None else "unknown",
+            "camera_status": _cam_status(cid),
+            "fps": round(st.get_fps(), 1),
+            "detections": [
+                {"class_name": d.class_name, "confidence": round(d.confidence, 2)}
+                for d in st.get_latest_detections()
+            ],
+            "events": event_store.get_recent(10, camera=cid),
+        }
+
+    def _cam_status(cid):
+        if manager is not None:
+            return manager.status(cid)["status"]
+        return states[cid].get_camera_status()
+
     @app.route("/api/status")
     def api_status():
-        session_state = entrance.get_session_state()
-        detections = entrance.get_latest_detections()
+        names = cam_names()
+        entrances = [_entrance_block(c["id"], c["name"]) for c in live_cams("entrance")]
+        first = next((e for e in entrances if e["id"] == "entrance"), None) or \
+            (entrances[0] if entrances else _entrance_block("entrance", names.get("entrance", "Entrance")))
+        room_ids = room_ids_now()
         status = {
-            "session_state": session_state.value if session_state is not None else "unknown",
-            "camera_status": entrance.get_camera_status(),
-            "fps": round(entrance.get_fps(), 1),
+            # Top-level fields: the first entrance camera (older single-entrance form).
+            "session_state": first["session_state"],
+            "camera_status": first["camera_status"],
+            "fps": first["fps"],
+            "detections": first["detections"],
             "recent_events": event_store.get_recent(10),
             # Separate lists so the dashboard shows entrance decisions and
             # room violations in their own panels.
-            "entrance_events": event_store.get_recent(10, camera="entrance"),
-            "room_events": event_store.get_recent(10, camera="room"),
-            "detections": [
-                {"class_name": d.class_name, "confidence": round(d.confidence, 2)}
-                for d in detections
-            ],
+            "entrance_events": event_store.get_recent(
+                10, camera=[e["id"] for e in entrances] or "entrance"),
+            "room_events": event_store.get_recent(10, camera=room_ids),
+            "entrances": entrances,
             "room": {"enabled": False},
+            "rooms": [],
         }
-        if room is not None:
-            room_dets = room.get_latest_detections()
-            status["room"] = {
+        for cam in live_cams("room"):
+            st = states[cam["id"]]
+            dets = st.get_latest_detections()
+            status["rooms"].append({
+                "id": cam["id"],
+                "name": cam["name"],
                 "enabled": True,
-                "camera_status": room.get_camera_status(),
-                "fps": round(room.get_fps(), 1),
-                "persons": sum(1 for d in room_dets if d.class_name == "person"),
-                "zone_status": room.get_zone_status(),
-                "zones": [{"name": z.name, "type": z.type} for z in current_zones()],
-            }
+                "camera_status": _cam_status(cam["id"]),
+                "fps": round(st.get_fps(), 1),
+                "persons": sum(1 for d in dets if d.class_name == "person"),
+                "zone_status": st.get_zone_status(),
+                "zones": [{"name": z.name, "type": z.type} for z in zones_for(cam["id"])],
+                "events": event_store.get_recent(10, camera=cam["id"]),
+            })
+        if status["rooms"]:
+            status["room"] = status["rooms"][0]   # older single-room field
         return jsonify(status)
 
     @app.route("/")
     def index():
-        return render_template("index.html", room_enabled=room is not None)
+        rooms = live_cams("room")
+        return render_template("index.html", room_enabled=bool(rooms), room_cams=rooms,
+                               entrance_cams=live_cams("entrance"))
 
     @app.route("/history")
     def history():
@@ -338,7 +444,8 @@ def create_app(config: dict, states: dict, event_store, zones=None, user_store=N
 
     @app.route("/statistics")
     def statistics():
-        return render_template("statistics.html", room_enabled=room is not None)
+        return render_template("statistics.html", room_enabled=bool(live_cams("room")),
+                               cam_names=cam_names())
 
     @app.route("/api/summary")
     def api_summary():

@@ -126,7 +126,8 @@ def init_auth(app, config: dict, user_store) -> None:
                                request.form.get("password", ""), "admin")
                 session.clear()
                 session["user"] = request.form["username"].strip()
-                return redirect(url_for("index"))
+                # First install: next step is telling the system which camera is which.
+                return redirect(url_for("settings_cameras"))
             except ValueError as e:
                 error = str(e)
         return render_template("login.html", error=error, setup=True)

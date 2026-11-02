@@ -1,0 +1,20 @@
+{
+  "cameras": [
+    {
+      "id": "entrance",
+      "role": "entrance",
+      "name": "Entrance",
+      "enabled": true,
+      "backend": "opencv",
+      "source": 0
+    },
+    {
+      "id": "room",
+      "role": "room",
+      "name": "Room",
+      "enabled": true,
+      "backend": "opencv",
+      "source": "videos/room_test.mp4"
+    }
+  ]
+}

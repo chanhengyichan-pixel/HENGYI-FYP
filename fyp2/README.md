@@ -68,13 +68,24 @@ The dashboard needs a login (`dashboard.auth: true` in the config).
   `sqlite3 output/events.db "DELETE FROM users"`, then start again and create a new admin.
 - The login only covers the web page. Detection, LEDs and voice alerts run without it.
 
+## Cameras (Admin > Cameras)
+
+After creating the first admin, the dashboard opens the **Cameras** page.
+
+- One card per camera with its picture, source (**USB Camera – /dev/video0**, **Raspberry Pi Camera – CSI 0**, **Video File – videos/a.mp4**) and status: **Running**, **Disconnected** (no more frames), **Error** (could not start, with the reason, e.g. *Device not found*) or **Disabled**. A broken camera has a **Retry** button.
+- Cards are grouped into **Entrance inspection** (helmet + vest check, ALLOW/DENY, no zones) and **Room monitoring** (hazard / restricted zones). Any number of each.
+- **+ Add Camera** (top right) first asks what the camera is for (Entrance Inspection or Room Monitoring), then its name and source with **Test camera**, then **Save Camera**. A new room camera opens its Zones tab.
+- The **⋮** menu on each card: Edit, Restart, Disable / Enable, Remove (asks first). These apply straight away to that one camera only: its AI pipeline is stopped first, then the capture thread, which releases the device. The other cameras keep running. (`core/camera_manager.py`)
+- How many cameras can run at once depends on the hardware. Before starting another camera the system checks free memory and `camera_capacity.max_active` in the config, and refuses with the reason (the camera is saved as Disabled). The page also warns when a running camera's AI frame rate drops below `camera_capacity.min_fps`.
+- The setup is saved in `output/cameras.json` (it takes precedence over `cameras:` in config.yaml). Delete that file to go back to config.yaml. A camera that fails at startup no longer stops the program: it shows as Error on the Cameras page.
+
 ## Drawing room zones
 
-Admins draw zones in the dashboard: **Settings > Room camera zones** (only the room camera has zones; the entrance camera always checks the person at the checkpoint).
+Zones belong to one room camera: **Settings > Cameras > Edit camera & zones > Zones** (the entrance camera has none).
 
 - Click **+ New zone**, click the corners on the floor, then **Finish shape** (or click the first point). Name it and pick Hazard or Restricted.
 - Drag a corner to adjust it, right-click a corner to remove it.
-- **Save and apply** writes `output/zones.json` and the room camera uses the new zones straight away (no restart).
+- **Save zones** writes `output/zones.json`. A running camera uses the new zones straight away (no restart). A camera that is not running yet is drawn on a snapshot; its zones start with the camera.
 - `output/zones.json` takes precedence over `zones.areas` in config.yaml. Delete the file to go back to the config.yaml zones.
 - Redraw the zones whenever the room camera is moved. `scripts/zone_picker.py` still works for drawing without the dashboard.
 

@@ -40,7 +40,7 @@
     .hit { fill: transparent; cursor: default; }
     .hit:hover { fill: rgba(255,255,255,0.04); }
 
-    .hbar { display: grid; grid-template-columns: 120px 1fr 36px; gap: 10px; align-items: center; padding: 6px 16px; font-size: 0.85rem; }
+    .hbar { display: grid; grid-template-columns: 150px 1fr 36px; gap: 10px; align-items: center; padding: 6px 16px; font-size: 0.85rem; }
     .hbar .track { height: 10px; background: #0c1117; border-radius: 4px; overflow: hidden; display: flex; gap: 2px; }
     .hbar .seg { height: 100%; }
     .hbar .seg:last-child { border-radius: 0 4px 4px 0; }
@@ -108,7 +108,7 @@
 
     {% if room_enabled %}
     <!-- Room -->
-    <div class="sec-title room">Room<span>hazard and restricted zones</span></div>
+    <div class="sec-title room">Room<span>hazard and restricted zones · all room cameras</span></div>
     <div class="tiles">
       <div class="tile"><div class="t-lbl">Room alerts</div><div class="t-val" id="r-alerts">—</div></div>
       <div class="tile"><div class="t-lbl"><i class="dot" style="background:var(--amber)"></i>Hazard, missing PPE</div><div class="t-val" id="r-hazard">—</div></div>
@@ -144,6 +144,7 @@
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const C = { green: css("--green"), red: "url(#tex)", amber: css("--amber"), cyan: css("--cyan") };
   const tip = document.getElementById("tip");
+  const CAM_NAMES = {{ cam_names|tojson }};
   const $ = id => document.getElementById(id);
   let days = 7;
 
@@ -239,11 +240,14 @@
       $("r-alerts").textContent = r.alerts;
       $("r-hazard").textContent = r.hazard;
       $("r-restricted").textContent = r.restricted;
-      $("r-topzone").textContent = r.by_zone.length ? r.by_zone[0].zone : "—";
+      $("r-topzone").textContent = r.by_zone.length
+        ? (Object.keys(CAM_NAMES).filter(k => k !== "entrance").length > 1 ? (CAM_NAMES[r.by_zone[0].camera] || r.by_zone[0].camera) + " · " : "") + r.by_zone[0].zone : "—";
       bars($("c-room"), s.daily, [
         { key: "hazard", label: "Hazard", color: C.amber },
         { key: "restricted", label: "Restricted", color: C.red }], dayLbl, it => fmtDay(it.date));
-      hbars($("c-zones"), r.by_zone.map(z => ({ label: z.zone, parts: [
+      const multiCam = new Set(r.by_zone.map(z => z.camera)).size > 1;
+      const zoneLabel = z => multiCam ? `${CAM_NAMES[z.camera] || z.camera} · ${z.zone}` : z.zone;
+      hbars($("c-zones"), r.by_zone.map(z => ({ label: zoneLabel(z), parts: [
         { v: z.hazard, color: C.amber, label: "Hazard" }, { v: z.restricted, color: C.red, label: "Restricted" }] })));
       const hm = r.hazard_missing;
       hbars($("c-hazard-missing"), [

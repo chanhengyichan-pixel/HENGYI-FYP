@@ -1,0 +1,130 @@
+{# Shared by the Cameras list and a camera's own page: styles, toast,
+   capacity warning and small JS helpers for the camera API. #}
+<style>
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 0.72rem; font-weight: 600;
+          padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .pill.running { color: #86efac; background: #052e16; }
+  .pill.disconnected { color: #fcd34d; background: #2a1d05; }
+  .pill.error { color: #fca5a5; background: #3b0a0a; }
+  .pill.disabled, .pill.stopped { color: #94a3b8; background: #1e293b; }
+  .pill.busy { color: #67e8f9; background: #0b2530; }
+  .role-chip { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+               padding: 3px 8px; border-radius: 4px; color: var(--rc); background: rgba(0,0,0,0.6); border: 1px solid var(--rc); }
+  .role-entrance { --rc: var(--cyan); } .role-room { --rc: var(--amber); }
+  .src { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+  .src svg { width: 14px; height: 14px; flex-shrink: 0; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: .8; }
+  .src span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .err-box { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px; font-size: 0.8rem; line-height: 1.45;
+             background: #2a0a0a; border: 1px solid #7f1d1d; color: #fca5a5; }
+  .err-box.disconnected { background: #241904; border-color: #78350f; color: #fde68a; }
+  .err-box div { flex: 1; min-width: 0; }
+  .err-box b { display: block; }
+  .err-box .btn { padding: 6px 12px; font-size: 0.78rem; flex-shrink: 0; background: #e2e8f0; color: #0f172a; }
+  .cap-warn { display: none; gap: 10px; align-items: flex-start; padding: 11px 14px; border-radius: 8px; font-size: 0.84rem; line-height: 1.5;
+              background: #1c1405; border: 1px solid #78350f; color: #fde68a; }
+  .cap-warn b { color: #fcd34d; }
+  #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px); opacity: 0;
+           background: #0b2a1a; border: 1px solid #166534; color: #86efac; padding: 10px 18px; border-radius: 8px;
+           font-size: 0.86rem; transition: all .25s; z-index: 60; pointer-events: none; max-width: min(640px, 90vw); line-height: 1.45; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.err { background: #2a1c03; border-color: #78350f; color: #fde68a; }
+  .field-help { font-size: 0.76rem; color: var(--text-dim); margin-top: 6px; line-height: 1.5; }
+  .btn:disabled { opacity: 0.45; cursor: default; filter: none; }
+  .btn-soft { background: #0b1e27; border: 1px solid var(--cyan-dim); color: var(--cyan); }
+  .src-row { display: flex; gap: 8px; }
+  .src-row select { flex: 1; min-width: 0; }
+  .src-row .btn { flex-shrink: 0; padding: 9px 12px; font-size: 0.8rem; }
+</style>
+
+<div id="toast" role="status"></div>
+
+<script>
+window.CamKit = (() => {
+  const CSRF = document.querySelector('meta[name="csrf"]').content;
+  const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const srcKey = c => c.backend + "|" + c.source;
+  const STATUS = { running: "Running", disconnected: "Disconnected", error: "Error", disabled: "Disabled", stopped: "Not started", busy: "Working…" };
+  const ICON = {
+    usb:  '<svg viewBox="0 0 24 24"><path d="M10 7h4v4h-4zM12 11v10M8 3h8v4H8z"/></svg>',
+    csi:  '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="12" cy="12" r="4"/></svg>',
+    file: '<svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M10 12l5 3-5 3z"/></svg>',
+    none: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg>',
+  };
+  let toastTimer;
+
+  // Same wording as core/camera_registry.describe_source.
+  function sourceInfo(c) {
+    if (c.backend === "picamera2") return { kind: "csi", label: "Raspberry Pi Camera – CSI " + c.source };
+    if (c.source === "" || c.source == null) return { kind: "none", label: "Not chosen" };
+    if (typeof c.source === "number" || /^-?\d+$/.test(String(c.source))) return { kind: "usb", label: "USB Camera – /dev/video" + c.source };
+    return { kind: "file", label: "Video File – " + c.source };
+  }
+  const sourceHtml = c => { const s = c.source_info || sourceInfo(c); return `<span class="src" title="${esc(s.label)}">${ICON[s.kind] || ""}<span>${esc(s.label)}</span></span>`; };
+
+  // <option>s for a camera's source. Sources used by another camera are marked.
+  function sourceOptions(c, detected, cams) {
+    const usedBy = {};
+    (cams || []).forEach(x => { if (x.id !== c.id && x.enabled) usedBy[srcKey(x)] = x.name; });
+    const opts = (detected || []).map(d => ({ key: srcKey(d), label: d.label + (usedBy[srcKey(d)] ? `  (used by ${usedBy[srcKey(d)]})` : "") }));
+    if (!opts.some(o => o.key === srcKey(c)) && c.source !== "" && c.source != null)
+      opts.unshift({ key: srcKey(c), label: sourceInfo(c).label + (sourceInfo(c).kind === "file" ? "" : "  (not found now)") });
+    const none = !opts.length ? `<option value="" selected>No camera found. Plug one in, then press Find cameras.</option>` : "";
+    return none + opts.map(o => `<option value="${esc(o.key)}" ${o.key === srcKey(c) ? "selected" : ""}>${esc(o.label)}</option>`).join("")
+      + `<option value="__file">Video File (for testing)…</option>`;
+  }
+  // Apply a <select> value to a camera object. Returns false if cancelled.
+  function pickSource(c, value) {
+    if (value === "__file") {
+      const p = prompt("Video file path, relative to the fyp2 folder (e.g. videos/room_test.mp4)", typeof c.source === "string" ? c.source : "");
+      if (!p || !p.trim()) return false;
+      c.backend = "opencv"; c.source = p.trim(); return true;
+    }
+    if (!value) return false;
+    const i = value.indexOf("|"), s = value.slice(i + 1);
+    c.backend = value.slice(0, i); c.source = /^-?\d+$/.test(s) ? +s : s; return true;
+  }
+  const previewUrl = c => `/settings/cameras/preview.jpg?backend=${encodeURIComponent(c.backend)}&source=${encodeURIComponent(c.source)}&t=${Date.now()}`;
+  // Load a picture into box (which holds a .msg span). Returns a promise: true = picture shown.
+  function showPicture(box, c, keep) {
+    const msg = box.querySelector(".msg");
+    if (!keep) msg.textContent = "Loading picture…";
+    return new Promise(res => {
+      const img = new Image();
+      img.onload = () => { box.querySelector("img")?.remove(); msg.textContent = ""; box.prepend(img); res(true); };
+      img.onerror = () => { if (!keep) { box.querySelector("img")?.remove(); msg.textContent = "No picture from this camera. Is it plugged in, and not used by another program?"; } res(false); };
+      img.src = previewUrl(c);
+    });
+  }
+
+  function call(url, body) {
+    const opt = body === undefined ? { cache: "no-store" }
+      : { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": CSRF }, body: JSON.stringify(body) };
+    return fetch(url, opt).then(r => r.json().catch(() => ({ ok: false, error: "Server error " + r.status })))
+      .then(d => { if (!d.ok && d.error) throw new Error(d.error); return d; });
+  }
+  const api = {
+    data: () => call("/settings/cameras/data"),
+    detect: () => fetch("/settings/cameras/detect").then(r => r.json()).then(d => d.cameras),
+    add: body => call("/settings/cameras/add", body),
+    update: (id, body) => call(`/settings/cameras/${encodeURIComponent(id)}/update`, body),
+    act: (id, action) => call(`/settings/cameras/${encodeURIComponent(id)}/action`, { action }),
+  };
+  function toast(text, warn) {
+    const t = document.getElementById("toast");
+    t.textContent = text; t.className = "show" + (warn ? " err" : "");
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = warn ? "err" : "", warn ? 8000 : 3500);
+  }
+  // Message / warning that came back with an action.
+  function report(d) { if (d.warning) toast(d.warning, true); else if (d.message) toast(d.message); return d; }
+  // Capacity banner (slow cameras) into element el.
+  function capacityBanner(el, d) {
+    const slow = (d.capacity && d.capacity.slow) || [];
+    if (!slow.length) { el.style.display = "none"; return; }
+    el.style.display = "flex";
+    el.innerHTML = `<div><b>The system is overloaded.</b> ${slow.map(s => `${esc(s.name)} runs at ${s.fps} fps`).join(", ")}
+      (needs at least ${d.capacity.min_fps} fps for reliable alerts). Disable a camera, or use faster hardware.</div>`;
+  }
+  return { CSRF, esc, srcKey, STATUS, sourceInfo, sourceHtml, sourceOptions, pickSource, previewUrl, showPicture, api, toast, report, capacityBanner };
+})();
+</script>

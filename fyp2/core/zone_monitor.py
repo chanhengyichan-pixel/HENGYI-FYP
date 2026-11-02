@@ -82,7 +82,7 @@ class _Timer:
 
 class ZoneMonitor:
     def __init__(self, config: dict, clock: Callable[[], float] = _time_module.monotonic,
-                 zones: list[Zone] | None = None):
+                 zones: list[Zone] | None = None, camera: str = "room"):
         zcfg = config["zones"]
         self._hazard_seconds = float(zcfg["hazard_seconds"])
         self._restricted_seconds = float(zcfg["restricted_seconds"])
@@ -94,6 +94,7 @@ class ZoneMonitor:
         self._min_missing_ratio = float(zcfg.get("hazard_min_missing_ratio", 0.0))
         self._zones = zones if zones is not None else load_zones(config)
         self._clock = clock
+        self.camera = camera   # camera id stamped on every event
 
         # (track_id, zone_name) -> _Timer for the condition currently held
         self._timers: dict[tuple[int, str], _Timer] = {}
@@ -172,6 +173,7 @@ class ZoneMonitor:
                         zone=zone.name,
                         track_id=det.track_id,
                         violations=list(violations) if zone.type == HAZARD else [],
+                        camera=self.camera,
                     ))
 
         self._prune(now)

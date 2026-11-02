@@ -41,7 +41,10 @@ _TRIGGER_STATES = {SessionState.GRANTED, SessionState.DENIED}
 
 
 class ScreenshotHandler(BaseHandler):
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, camera: str = "entrance"):
+        # camera: which entrance camera this instance serves (one instance
+        # per entrance camera, so each has its own debounce state).
+        self._camera = camera
         # Fail fast on missing key — consistent with camera/detector/session config
         # handling. A misconfigured path is caught at startup, not silently at
         # the first GRANTED/DENIED event mid-run.
@@ -71,7 +74,8 @@ class ScreenshotHandler(BaseHandler):
             return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = self._screenshot_dir / f"{timestamp}_{verdict_label}.jpg"
+        suffix = "" if self._camera == "entrance" else f"_{self._camera}"
+        filename = self._screenshot_dir / f"{timestamp}_{verdict_label}{suffix}.jpg"
         cv2.imwrite(str(filename), frame)
         logger.info("Screenshot saved: %s", filename)
 

@@ -132,7 +132,7 @@ ORDER BY cnt DESC
 """
 
 _SELECT_SINCE = f"""
-SELECT timestamp, {_EVENT_TYPE_EXPR}, violations, zone
+SELECT timestamp, {_EVENT_TYPE_EXPR}, violations, zone, COALESCE(camera, 'entrance')
 FROM events
 WHERE (? IS NULL OR timestamp >= ?)
 """
@@ -243,7 +243,7 @@ class EventStore:
         by_zone: dict[str, dict] = {}
         by_hour = [0] * 24          # room alerts + denials per hour of day
         by_day: dict[str, dict] = {}
-        for ts, etype, viol_json, zone in rows:
+        for ts, etype, viol_json, zone, camera in rows:
             if etype not in counts:
                 continue
             counts[etype] += 1
@@ -260,7 +260,7 @@ class EventStore:
                 if k in hazard_missing:
                     hazard_missing[k] += 1
             if etype in ("HAZARD_PPE", "RESTRICTED_ENTRY"):
-                z = by_zone.setdefault(zone or "?", {"hazard": 0, "restricted": 0})
+                z = by_zone.setdefault((camera, zone or "?"), {"hazard": 0, "restricted": 0})
                 z["hazard" if etype == "HAZARD_PPE" else "restricted"] += 1
             if etype != "ENTRY_GRANTED":
                 try:
@@ -292,7 +292,7 @@ class EventStore:
             "room": {"alerts": counts["HAZARD_PPE"] + counts["RESTRICTED_ENTRY"],
                      "hazard": counts["HAZARD_PPE"], "restricted": counts["RESTRICTED_ENTRY"],
                      "hazard_missing": hazard_missing,
-                     "by_zone": [{"zone": k, **v} for k, v in
+                     "by_zone": [{"camera": k[0], "zone": k[1], **v} for k, v in
                                  sorted(by_zone.items(), key=lambda kv: -sum(kv[1].values()))]},
             "by_hour": by_hour,
             "daily": daily,
@@ -317,10 +317,11 @@ class EventStore:
             "has_more": has_more,
         }
 
-    def get_recent(self, n: int = 10, camera: str | None = None) -> list[dict]:
+    def get_recent(self, n: int = 10, camera=None) -> list[dict]:
         """Return up to n most recent events, newest first.
 
-        camera optionally restricts to one camera ("entrance" or "room");
+        camera optionally restricts to one camera id ("entrance", "room",
+        "room2"...) or a list of ids;
         rows written before the camera column count as "entrance".
 
         violations is decoded from JSON back to a Python list.
@@ -329,7 +330,16 @@ class EventStore:
         with self._lock:
             if self._conn is None:
                 return []
-            rows = self._conn.execute(_SELECT_RECENT, (camera, camera, n)).fetchall()
+            if isinstance(camera, (list, tuple, set)):
+                cams = list(camera)
+                if not cams:
+                    return []
+                marks = ",".join("?" * len(cams))
+                rows = self._conn.execute(
+                    f"SELECT {_COLUMNS} FROM events WHERE COALESCE(camera, 'entrance') IN ({marks}) "
+                    "ORDER BY timestamp DESC, id DESC LIMIT ?", (*cams, n)).fetchall()
+            else:
+                rows = self._conn.execute(_SELECT_RECENT, (camera, camera, n)).fetchall()
         return [_row_to_event(r) for r in rows]
 
     def close(self) -> None:

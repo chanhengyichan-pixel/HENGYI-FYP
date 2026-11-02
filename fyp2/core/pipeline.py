@@ -85,7 +85,8 @@ _FPS_WINDOW = 30  # number of frame timestamps kept for rolling FPS
 class Pipeline:
     def __init__(self, config, shared_state, camera, detector,
                  decision_engine, session_controller, alert_manager=None,
-                 pose_checker=None):
+                 pose_checker=None, name: str = "entrance"):
+        self._name = name
         self._shared_state = shared_state
         self._detector = detector
         self._decision_engine = decision_engine
@@ -110,10 +111,10 @@ class Pipeline:
     def start(self):
         self._running = True
         self._thread = threading.Thread(
-            target=self._loop, daemon=True, name="PipelineThread"
+            target=self._loop, daemon=True, name=f"PipelineThread-{self._name}"
         )
         self._thread.start()
-        logger.info("Pipeline started.")
+        logger.info("Pipeline started (%s).", self._name)
 
     def stop(self):
         self._running = False

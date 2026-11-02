@@ -50,8 +50,11 @@ def _now() -> str:
 
 
 class EventLogHandler(BaseHandler):
-    def __init__(self, event_store):
+    def __init__(self, event_store, camera: str = "entrance"):
         self._event_store = event_store
+        # Which entrance camera's decisions this instance logs (one
+        # instance per entrance camera, each with its own debounce).
+        self._camera = camera
         self._last_recorded_state = None
 
     def handle(self, session_state, frame_verdict, frame) -> None:
@@ -69,7 +72,7 @@ class EventLogHandler(BaseHandler):
             "timestamp":  _now(),
             "event_type": event_type,
             "verdict":    session_state.value,
-            "camera":     "entrance",
+            "camera":     self._camera,
             "zone":       None,
             "severity":   severity,
             "violations": list(frame_verdict.violations),

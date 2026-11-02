@@ -1,11 +1,14 @@
 """
-Settings > Room zones: draw hazard / restricted zones on the room camera
-image in the browser (admin only).
+Room camera zones: draw hazard / restricted zones on a room camera's image
+in the browser (admin only). The editor lives on each room camera's own
+page (Settings > Cameras > Edit > Zones); the entrance camera has no zones.
 
 Saved zones go to a JSON file (config zones.file, default
-output/zones.json), which overrides config.yaml's zones.areas, and are
-swapped into the running ZoneMonitor straight away — no restart, no
-config editing. Coordinates are room-camera pixels, the same as before.
+output/zones.json, one list per camera id), which overrides config.yaml's
+zones.areas. For a running camera they are swapped into its ZoneMonitor
+straight away (no restart). A room camera that is set up but not running
+yet (just added, or switched on) can have its zones drawn on a snapshot;
+they start working when the camera starts. Coordinates are camera pixels.
 """
 
 from __future__ import annotations
@@ -13,29 +16,58 @@ from __future__ import annotations
 import logging
 
 import cv2
-from flask import Response, abort, jsonify, render_template, request
+from flask import Response, abort, jsonify, redirect, request, url_for
 
-from core.zones import MAX_POINTS, MAX_ZONES, save_zones, zones_from_areas, zones_to_areas
+from core.camera_registry import grab_frame, load_cameras
+from core.zones import load_active_zones, save_zones, zones_from_areas, zones_to_areas
 from dashboard.auth import admin_required
 
 logger = logging.getLogger(__name__)
 
 
-def init_zone_editor(app, config: dict, room_state, get_zones, apply_zones) -> None:
+def configured_room_cams(config: dict) -> list[dict]:
+    """Room cameras in the saved camera setup (running or not)."""
+    try:
+        cams, _ = load_cameras(config)
+    except (ValueError, KeyError, OSError):
+        return []
+    return [c for c in cams if c["role"] == "room"]
+
+
+def init_zone_editor(app, config: dict, states: dict, running_room_ids, zones_for, apply_zones) -> None:
+    """running_room_ids(): ids of the room cameras running right now."""
+
+    def _camera_arg():
+        running_ids = running_room_ids()
+        cid = request.args.get("camera") or (running_ids[0] if running_ids else None)
+        if cid in running_ids:
+            return cid, None
+        cam = next((c for c in configured_room_cams(config) if c["id"] == cid), None)
+        if cam is None:
+            abort(404)
+        return cid, cam
 
     @app.route("/settings/zones")
     @admin_required
     def settings_zones():
-        return render_template("zones.html", room_enabled=room_state is not None,
-                               max_zones=MAX_ZONES, max_points=MAX_POINTS)
+        """Old address: zones now live on each room camera's page."""
+        running_ids = running_room_ids()
+        cid = request.args.get("camera") or (running_ids[0] if running_ids else None)
+        if not cid:
+            return redirect(url_for("settings_cameras"))
+        return redirect(url_for("settings_camera_edit", cid=cid, tab="zones"))
 
     @app.route("/settings/zones/frame.jpg")
     @admin_required
     def settings_zones_frame():
-        """Current room frame WITHOUT overlays, to draw on."""
-        if room_state is None:
-            abort(404)
-        frame = room_state.get_frame()
+        """The camera's current frame WITHOUT overlays, to draw on.
+        Not running yet: one snapshot straight from the camera."""
+        cid, cam = _camera_arg()
+        if cam is None:
+            frame = states[cid].get_frame()
+        else:
+            frame = grab_frame(cam.get("backend", "opencv"), cam.get("source"),
+                               cam.get("width", 640), cam.get("height", 480))
         if frame is None:
             abort(503)
         ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -47,14 +79,20 @@ def init_zone_editor(app, config: dict, room_state, get_zones, apply_zones) -> N
     @app.route("/settings/zones/data", methods=["GET", "POST"])
     @admin_required
     def settings_zones_data():
+        cid, cam = _camera_arg()
+        running = cam is None
         if request.method == "GET":
-            return jsonify({"zones": zones_to_areas(get_zones())})
+            zones = zones_for(cid) if running else load_active_zones(config, cid)[0]
+            return jsonify({"camera": cid, "running": running, "zones": zones_to_areas(zones)})
         payload = request.get_json(silent=True) or {}
         try:
             zones = zones_from_areas(payload.get("zones"))
         except ValueError as e:
             return jsonify({"ok": False, "error": str(e)}), 400
-        path = save_zones(config, zones)
-        apply_zones(zones)
-        logger.info("Room zones updated from dashboard: %d zones saved to %s", len(zones), path)
-        return jsonify({"ok": True, "zones": zones_to_areas(zones), "file": path})
+        path = save_zones(config, zones, cid)
+        if running:
+            apply_zones(cid, zones)
+        logger.info("Zones for %s updated from dashboard: %d zones saved to %s%s", cid, len(zones), path,
+                    "" if running else " (camera not running yet)")
+        return jsonify({"ok": True, "camera": cid, "running": running,
+                        "zones": zones_to_areas(zones), "file": path})

@@ -32,6 +32,11 @@
     #status.err { color: #fca5a5; } #status.ok { color: #86efac; }
     .help { padding: 12px; font-size: 0.8rem; line-height: 1.65; color: var(--text-dim); }
     .help b { color: var(--text); }
+    #cam-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    #cam-pick .lbl { font-size: 0.78rem; color: var(--text-dim); margin-right: 4px; }
+    #cam-pick a { font-size: 0.85rem; color: var(--text-dim); text-decoration: none; padding: 7px 14px;
+                  border: 1px solid var(--border); border-radius: 6px; }
+    #cam-pick a.on { color: var(--amber); border-color: #78350f; background: #1c1405; font-weight: 600; }
     #cam-info { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     .cam-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
                border-top: 3px solid var(--c); padding: 12px 16px; opacity: 0.75; }
@@ -57,6 +62,7 @@
   <div id="content">
     <div class="subtabs">
       <a href="{{ url_for('settings') }}">Accounts</a>
+      <a href="{{ url_for('settings_cameras') }}">Cameras</a>
       <a href="{{ url_for('settings_zones') }}" class="on">Room camera zones</a>
     </div>
 
@@ -67,15 +73,21 @@
         <div class="cam-note">Nothing to draw. It always checks the person at the checkpoint.</div>
       </div>
       <div class="cam-box room on">
-        <div class="cam-name">Room camera <span>· set up here</span></div>
-        <div class="cam-job">Watches the work area. Zones are drawn only for this camera.</div>
+        <div class="cam-name">Room cameras <span>· set up here</span></div>
+        <div class="cam-job">Watch the work areas. Each room camera has its own zones.</div>
         <div class="cam-note"><b class="hz">Hazard</b>: PPE required inside. &nbsp;<b class="rs">Restricted</b>: nobody may enter.</div>
       </div>
     </div>
 
     {% if not room_enabled %}
-    <div class="card"><div class="help">The room camera is off (<code>cameras.room.enabled: false</code> in the config), so there is nothing to draw on.</div></div>
+    <div class="card"><div class="help">No room camera is running, so there is nothing to draw on. Add or enable one under <a href="{{ url_for('settings_cameras') }}" style="color:var(--cyan)">Cameras</a>.</div></div>
     {% else %}
+    <div id="cam-pick">
+      <span class="lbl">Camera</span>
+      {% for c in room_cams %}
+      <a href="{{ url_for('settings_zones', camera=c.id) }}" class="{{ 'on' if c.id == selected }}">{{ c.name }}</a>
+      {% endfor %}
+    </div>
     <div id="editor">
       <div id="stage-card" class="card">
         <div id="toolbar">
@@ -94,7 +106,7 @@
 
       <div id="side">
         <div class="card">
-          <div class="card-hdr">Room camera zones</div>
+          <div class="card-hdr">Zones · {{ (room_cams|selectattr('id','equalto',selected)|first).name }}</div>
           <div id="zone-list"></div>
         </div>
         <div class="card">
@@ -121,6 +133,7 @@
   const COLORS = { hazard: "#f59e0b", restricted: "#ef4444" };
   const MAX_ZONES = {{ max_zones }}, MAX_POINTS = {{ max_points }};
   const CSRF = document.querySelector('meta[name="csrf"]').content;
+  const CAM = {{ selected|tojson }};
   const img = document.getElementById("frame"), cv = document.getElementById("cv"), ctx = cv.getContext("2d");
   const $ = id => document.getElementById(id);
 
@@ -282,13 +295,13 @@
   $("b-reset").onclick = () => { zones = JSON.parse(saved); sel = -1; renderList(); setStatus("", ""); };
   $("b-save").onclick = () => {
     $("b-save").disabled = true; setStatus("Saving…", "");
-    fetch("/settings/zones/data", { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": CSRF },
+    fetch("/settings/zones/data?camera=" + encodeURIComponent(CAM), { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": CSRF },
                                    body: JSON.stringify({ zones }) })
       .then(r => r.json().then(d => ({ ok: r.ok, d })))
       .then(({ ok, d }) => {
         if (!ok) throw new Error(d.error || "Save failed");
         zones = d.zones; saved = JSON.stringify(zones); renderList();
-        setStatus("Saved. The room camera is using these zones now.", "ok");
+        setStatus("Saved. This camera is using these zones now.", "ok");
       })
       .catch(err => { renderList(); setStatus(err.message, "err"); });
   };
@@ -296,13 +309,13 @@
 
   // ── load ──
   function loadFrame() {
-    img.src = "/settings/zones/frame.jpg?t=" + Date.now();
+    img.src = "/settings/zones/frame.jpg?camera=" + encodeURIComponent(CAM) + "&t=" + Date.now();
   }
   img.onload = fit;
-  img.onerror = () => setStatus("No image from the room camera yet. Is it connected? Try Refresh image.", "err");
+  img.onerror = () => setStatus("No image from this camera yet. Is it connected? Try Refresh image.", "err");
   new ResizeObserver(fit).observe(img);
   window.addEventListener("beforeunload", e => { if (JSON.stringify(zones) !== saved) e.preventDefault(); });
-  fetch("/settings/zones/data").then(r => r.json()).then(d => {
+  fetch("/settings/zones/data?camera=" + encodeURIComponent(CAM)).then(r => r.json()).then(d => {
     zones = d.zones; saved = JSON.stringify(zones); renderList();
   });
   loadFrame();

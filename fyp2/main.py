@@ -38,6 +38,7 @@ from core.camera_manager import CameraManager, CapacityError
 from alerts.alert_manager import AlertManager
 from alerts.screenshot_handler import ScreenshotHandler
 from alerts.voice_handler import VoiceHandler
+from alerts.speaker import Speaker
 from alerts.led_handler import LedHandler
 from alerts.event_log_handler import EventLogHandler
 from storage.event_store import EventStore
@@ -57,11 +58,14 @@ def run(config: dict) -> bool:
     event_store = EventStore(config)
     decision_engine = DecisionEngine(config)
 
+    # One USB speaker shared by all cameras: prompts are queued, never overlap.
+    speaker = Speaker(config["voice"].get("max_wait_seconds", 8.0))
+
     handlers = [
         # ScreenshotHandler BEFORE EventLogHandler: it fills event.snapshot
         # for zone events, which EventLogHandler then stores.
         ScreenshotHandler(config),
-        VoiceHandler(config),
+        VoiceHandler(config, speaker=speaker),
         EventLogHandler(event_store),
     ]
     led_handler = None
@@ -81,8 +85,8 @@ def run(config: dict) -> bool:
             else:
                 # Each extra entrance camera gets its own screenshot / voice /
                 # log handlers (they remember the last decision to debounce);
-                # the LEDs are shared hardware.
-                extra = [ScreenshotHandler(config, camera=cid), VoiceHandler(config),
+                # the LEDs and the speaker are shared hardware.
+                extra = [ScreenshotHandler(config, camera=cid), VoiceHandler(config, speaker=speaker),
                          EventLogHandler(event_store, camera=cid)]
                 am = AlertManager(extra + ([led_handler] if led_handler else []))
             pipeline = Pipeline(
@@ -145,6 +149,7 @@ def run(config: dict) -> bool:
         manager.stop_all()
         if led_handler is not None:
             led_handler.close()
+        speaker.close()
         event_store.close()
         logger.info("Done.")
     return restart.is_set()

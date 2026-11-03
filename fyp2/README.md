@@ -2,12 +2,13 @@
 
 PPE (helmet + vest) compliance monitoring with YOLOv8 on a Raspberry Pi, no cloud, no face recognition, no personal data.
 
-- **Entrance camera** — PPE check point. A person stands in the marked square; after ~1.5 s of votes the system decides **ALLOW** (green LED, voice) or **DENY** (red LED, voice).
+- **Entrance camera** — PPE check point. A person stands in the marked square; after ~1.5 s of votes the system decides **ALLOW** (entrance green LED, voice) or **DENY** (entrance red LED, voice).
 - **Room camera** — zone monitoring with person tracking (ByteTrack):
-  - **Hazard zone**: helmet or vest missing for ~2 s → voice warning, snapshot, `HAZARD_PPE` event.
-  - **Restricted zone**: anyone inside for ~1 s → voice, red LED, snapshot, `RESTRICTED_ENTRY` event (highest severity).
+  - **Hazard zone**: helmet or vest missing for ~2 s → voice warning, room red LED, snapshot, `HAZARD_PPE` event.
+  - **Restricted zone**: anyone inside for ~1 s → voice, room red LED, snapshot, `RESTRICTED_ENTRY` event (highest severity).
   - Same person + same event type: at most once per 30 s.
 - **Dashboard** (Flask) — both live streams with zone overlay, live status, event history with filter and snapshots.
+- **Lights and sound** — the entrance and the room have their own LEDs, so a red light is never ambiguous. Both cameras share **one USB speaker**: prompts are queued and played one at a time, never over each other (priority: restricted entry, which also cuts the current prompt, then entrance denied, hazard, granted; a prompt that waited over `voice.max_wait_seconds` is dropped). The prompts themselves say where they come from ("Access denied…" = entrance, "…hazard area…" / "…restricted area…" = room). (`alerts/speaker.py`, `alerts/led_handler.py`)
 - **Storage** — SQLite `output/events.db` (event type, camera, zone, severity, violations, snapshot path).
 
 Everything runs the same on the laptop and on the Pi; only the config differs (`config/config.yaml` vs `config/config_pi.yaml`).
@@ -76,7 +77,7 @@ After creating the first admin, the dashboard opens the **Cameras** page.
 - Cards are grouped into **Entrance inspection** (helmet + vest check, ALLOW/DENY, no zones) and **Room monitoring** (hazard / restricted zones). Any number of each.
 - **+ Add Camera** (top right) first asks what the camera is for (Entrance Inspection or Room Monitoring), then its name and source with **Test camera**, then **Save Camera**. A new room camera opens its Zones tab.
 - The **⋮** menu on each card: Edit, Restart, Disable / Enable, Remove (asks first). These apply straight away to that one camera only: its AI pipeline is stopped first, then the capture thread, which releases the device. The other cameras keep running. (`core/camera_manager.py`)
-- How many cameras can run at once depends on the hardware. Before starting another camera the system checks free memory and `camera_capacity.max_active` in the config, and refuses with the reason (the camera is saved as Disabled). The page also warns when a running camera's AI frame rate drops below `camera_capacity.min_fps`.
+- This build runs **two cameras at once** (one entrance + one room), which the Raspberry Pi handles well: `camera_capacity.max_active: 2`. More cameras can be saved, but a third one cannot start until another is disabled. With faster hardware, raise the number (no code change). Before starting another camera the system checks free memory and `camera_capacity.max_active`, and refuses with the reason (the camera is saved as Disabled). The page also warns when a running camera's AI frame rate drops below `camera_capacity.min_fps`.
 - The setup is saved in `output/cameras.json` (it takes precedence over `cameras:` in config.yaml). Delete that file to go back to config.yaml. A camera that fails at startup no longer stops the program: it shows as Error on the Cameras page.
 
 ## Drawing room zones
@@ -118,7 +119,15 @@ printf 'defaults.pcm.card 2\ndefaults.ctl.card 2\n' > ~/.asoundrc
 aplay assets/audio/granted.wav            # should play on the speaker
 ```
 
-**LEDs** (BCM numbering): GPIO17 → 330 Ω → green LED (+), LED (−) → GND; GPIO22 → 330 Ω → red LED (+), LED (−) → GND.
+**LEDs** (BCM numbering, each: GPIO → 330 Ω → LED (+), LED (−) → GND):
+
+| LED | GPIO (physical pin) | Lights when |
+|---|---|---|
+| Entrance green | GPIO17 (pin 11) | ALLOW |
+| Entrance red | GPIO22 (pin 15) | DENY |
+| Room red | GPIO27 (pin 13) | restricted entry or hazard alert, for `leds.red_hold_seconds` |
+
+Any GND pin works (e.g. pin 9, 14). Remove `room_red_pin` from the config to use only two LEDs (restricted entry then lights the entrance red, as before).
 
 **Faster model (NCNN).** On the Pi, export once and point the config at the folder:
 

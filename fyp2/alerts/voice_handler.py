@@ -2,7 +2,7 @@
 VoiceHandler — plays a pre-recorded audio reminder on GRANTED/DENIED
 state entry, and on room zone events (HAZARD_PPE, RESTRICTED_ENTRY).
 
-Audio library: subprocess.Popen(['aplay', path])
+Audio library: aplay (played by alerts/speaker.py)
 -----------------------------------------------
 aplay is ALSA's command-line WAV player, standard on all Debian-based
 Linux distributions and Raspberry Pi OS — zero additional pip
@@ -22,8 +22,9 @@ Alternatives considered:
 
 Non-blocking guarantee
 ----------------------
-handle() dispatches Popen and returns immediately. The calling thread
-(Pipeline Thread 1) is not blocked for the duration of playback.
+handle() only queues the prompt on the shared Speaker and returns
+immediately; the Speaker's own thread runs aplay. The pipeline threads
+are never blocked for the duration of playback.
 This preserves the inference throughput measured in Milestone 5.
 
 Debounce
@@ -62,14 +63,14 @@ the general prompt is used instead. For DENIED the violations come from
 the whole evaluation window (SessionController.decision_violations, via
 Pipeline), not from one possibly-flickering frame.
 
-Overlapping prompts
--------------------
-The entrance and room pipelines can both want to speak at once. Only one
-prompt plays at a time: while a prompt is still playing, a new one is
-skipped — except RESTRICTED_ENTRY, the highest-severity event, which
-stops the current prompt and plays immediately. A lock guards the
-"currently playing" process because the two pipelines call in from
-different threads.
+Overlapping prompts — one shared speaker
+----------------------------------------
+Every VoiceHandler (one per camera) sends its prompts to the same
+alerts.speaker.Speaker, which queues them and plays one at a time in
+priority order: RESTRICTED_ENTRY (cuts the current prompt) > entrance
+DENIED > HAZARD_PPE > GRANTED. Nothing is skipped just because another
+prompt is playing; only prompts that waited too long are dropped. See
+alerts/speaker.py.
 
 USB speaker
 -----------
@@ -86,11 +87,11 @@ change is required to swap in real recordings.
 """
 
 import logging
-import subprocess
-import threading
 from pathlib import Path
 
 from alerts.base_handler import BaseHandler
+from alerts.speaker import (PRIORITY_DENIED, PRIORITY_GRANTED, PRIORITY_HAZARD,
+                            PRIORITY_RESTRICTED, Speaker)
 from core.session_controller import SessionState
 from core.zone_monitor import HAZARD_PPE, RESTRICTED_ENTRY
 
@@ -99,8 +100,19 @@ logger = logging.getLogger(__name__)
 _TRIGGER_STATES = {SessionState.GRANTED, SessionState.DENIED}
 
 
+_PRIORITY = {
+    SessionState.GRANTED: PRIORITY_GRANTED,
+    SessionState.DENIED:  PRIORITY_DENIED,
+    HAZARD_PPE:           PRIORITY_HAZARD,
+    RESTRICTED_ENTRY:     PRIORITY_RESTRICTED,
+}
+
+
 class VoiceHandler(BaseHandler):
-    def __init__(self, config: dict):
+    """speaker: the shared Speaker. If None, this handler makes its own
+    (fine for a single camera and for tests)."""
+
+    def __init__(self, config: dict, speaker: Speaker | None = None):
         voice = config["voice"]
         self._sounds: dict = {
             SessionState.GRANTED: Path(voice["granted_sound"]),
@@ -131,8 +143,7 @@ class VoiceHandler(BaseHandler):
                 )
 
         self._last_played_state = None  # debounce: same pattern as ScreenshotHandler
-        self._lock = threading.Lock()
-        self._current = None            # Popen of the prompt playing now, if any
+        self.speaker = speaker or Speaker(voice.get("max_wait_seconds", 8.0))
 
     def handle(self, session_state, frame_verdict, frame) -> None:
         if session_state not in _TRIGGER_STATES:
@@ -146,13 +157,13 @@ class VoiceHandler(BaseHandler):
         key = session_state
         if session_state is SessionState.DENIED:
             key = self._item_key(session_state, frame_verdict.violations)
-        self._play(key, interrupt=False)
+        self._play(key)
 
     def handle_zone_event(self, event, frame) -> None:
         key = event.event_type
         if event.event_type == HAZARD_PPE:
             key = self._item_key(HAZARD_PPE, event.violations)
-        self._play(key, interrupt=event.event_type == RESTRICTED_ENTRY)
+        self._play(key)
 
     def _item_key(self, base, violations):
         """Per-item prompt key when exactly one item is missing and a file
@@ -164,26 +175,12 @@ class VoiceHandler(BaseHandler):
                 return key
         return base
 
-    def _play(self, key, interrupt: bool) -> None:
+    def _play(self, key) -> None:
         path = self._sounds[key]
         if not path.exists():
             return  # already warned at construction; skip silently here
-
-        with self._lock:
-            busy = self._current is not None and self._current.poll() is None
-            if busy and not interrupt:
-                logger.info("Voice alert skipped (another prompt playing): %s", path.name)
-                return
-            if busy:
-                self._current.terminate()
-            # Fire-and-forget: Popen returns immediately, audio plays in a
-            # separate OS process without blocking this thread.
-            self._current = subprocess.Popen(
-                ["aplay", "--quiet", str(path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        logger.info("Voice alert: playing %s", path.name)
+        base = key[0] if isinstance(key, tuple) else key
+        self.speaker.say(path, _PRIORITY[base])
 
 
 def _describe(key) -> str:

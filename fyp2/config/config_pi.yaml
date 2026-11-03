@@ -43,15 +43,19 @@ cameras:
     max_failed_reads: 10
     loop_video: true
 
-# How many cameras can run at once depends on the hardware, not on a fixed
-# number. Before starting another camera (startup or the dashboard's
-# Cameras page) the system checks:
-#   max_active          0 = no fixed limit; set e.g. 2 to cap it by hand
+# How many cameras may RUN at once. This build is designed for two cameras
+# (one entrance + one room), which is what the Raspberry Pi handles well,
+# so max_active is 2: more cameras can be saved on the Cameras page, but a
+# third one cannot be started until another is disabled. With faster
+# hardware (e.g. an AI HAT+) raise the number — no code change needed.
+# Before starting another camera (startup or the dashboard's Cameras page)
+# the system checks:
+#   max_active          most cameras running at once (0 = no fixed limit)
 #   min_free_memory_mb  refuse to start one more camera below this free RAM
 #   min_fps             the Cameras page warns when a running camera's AI
 #                       frame rate drops below this (system overloaded)
 camera_capacity:
-  max_active: 0
+  max_active: 2
   min_free_memory_mb: 350
   min_fps: 2.0
 
@@ -86,7 +90,11 @@ storage:
 # Missing files are skipped with a warning — never fatal.
 # denied_sound / hazard_sound are used when BOTH helmet and vest are
 # missing; the *_no_helmet / *_no_vest prompts when only one is missing.
+# All cameras share ONE speaker: prompts are queued and played one at a
+# time (restricted entry first, then entrance denied, hazard, granted).
+# max_wait_seconds: a prompt still waiting after this long is dropped.
 voice:
+  max_wait_seconds: 8.0
   granted_sound:          "assets/audio/granted.wav"
   denied_sound:           "assets/audio/denied.wav"
   denied_no_helmet_sound: "assets/audio/denied_no_helmet.wav"
@@ -97,14 +105,18 @@ voice:
   restricted_sound:       "assets/audio/restricted.wav"
 
 # Status LEDs (BCM pin numbers), driven through gpiozero.
-#   green: entrance ALLOW hold
-#   red:   entrance DENY hold, and for red_hold_seconds after a
-#          RESTRICTED_ENTRY event
+# The entrance and the room have their own lights:
+#   green_pin:     entrance green, ALLOW hold
+#   red_pin:       entrance red, DENY hold
+#   room_red_pin:  room red, for red_hold_seconds after a RESTRICTED_ENTRY
+#                  or HAZARD_PPE event (remove it to use the entrance red
+#                  for restricted entry instead, as in older versions)
 # In laptop mode the pins are simulated and only logged.
 leds:
   enabled: true
   green_pin: 17
   red_pin: 22
+  room_red_pin: 27
   red_hold_seconds: 5.0
 
 # Per-person, geometry-aware PPE evaluation (core/decision_engine.py).

@@ -1,9 +1,16 @@
 """
-LedHandler — green/red status LEDs on the Raspberry Pi GPIO.
+LedHandler — status LEDs on the Raspberry Pi GPIO.
 
-  green : on while the entrance is in the GRANTED hold
-  red   : on while the entrance is in the DENIED hold, and for
-          red_hold_seconds after a RESTRICTED_ENTRY zone event
+Separate lights for the entrance and the room, so a red light is never
+ambiguous (entrance refused someone vs. someone in a room zone):
+
+  entrance green : on while the entrance is in the GRANTED hold
+  entrance red   : on while the entrance is in the DENIED hold
+  room red       : on for red_hold_seconds after a RESTRICTED_ENTRY or
+                   HAZARD_PPE event from the room camera
+
+If leds.room_red_pin is not set (older config), there is no room LED and
+a RESTRICTED_ENTRY event lights the entrance red LED instead, as before.
 
 gpiozero
 --------
@@ -30,7 +37,7 @@ import time as _time_module
 
 from alerts.base_handler import BaseHandler
 from core.session_controller import SessionState
-from core.zone_monitor import RESTRICTED_ENTRY
+from core.zone_monitor import HAZARD_PPE, RESTRICTED_ENTRY
 
 logger = logging.getLogger(__name__)
 
@@ -52,34 +59,40 @@ class _LogLed:
         pass
 
 
-def _make_leds(green_pin, red_pin, mode):
+def _make_leds(pins, mode):
+    """One LED per pin (None -> no LED)."""
     try:
         from gpiozero import Device, LED
         if mode != "pi":
             from gpiozero.pins.mock import MockFactory
             Device.pin_factory = MockFactory()
-        return LED(green_pin), LED(red_pin)
+        return tuple(LED(p) if p is not None else None for p in pins)
     except Exception as e:  # ImportError on a laptop without gpiozero, or no GPIO
         if mode == "pi":
             logger.error("LedHandler: GPIO unavailable (%s) — LEDs disabled.", e)
         else:
             logger.info("LedHandler: simulated LEDs (laptop mode).")
-        return _LogLed(green_pin), _LogLed(red_pin)
+        return tuple(_LogLed(p) if p is not None else None for p in pins)
 
 
 class LedHandler(BaseHandler):
+    """leds: (green, red) or (green, red, room_red) — injected in tests."""
+
     def __init__(self, config: dict, clock=_time_module.monotonic, leds=None):
         led_cfg = config["leds"]
         self._red_hold_seconds = float(led_cfg["red_hold_seconds"])
         self._clock = clock
         if leds is None:
-            leds = _make_leds(int(led_cfg["green_pin"]), int(led_cfg["red_pin"]),
+            room_pin = led_cfg.get("room_red_pin")
+            leds = _make_leds((int(led_cfg["green_pin"]), int(led_cfg["red_pin"]),
+                               int(room_pin) if room_pin is not None else None),
                               config.get("mode", "laptop"))
-        self._green, self._red = leds
+        leds = tuple(leds) + (None,) * (3 - len(leds))
+        self._green, self._red, self._room_red = leds
 
         self._lock = threading.Lock()
         self._entrance_state = None
-        self._restricted_until = 0.0
+        self._room_alert_until = 0.0
 
     def handle(self, session_state, frame_verdict, frame) -> None:
         with self._lock:
@@ -87,10 +100,12 @@ class LedHandler(BaseHandler):
             self._refresh()
 
     def handle_zone_event(self, event, frame) -> None:
-        if event.event_type != RESTRICTED_ENTRY:
+        if self._room_red is None and event.event_type != RESTRICTED_ENTRY:
+            return          # no room LED: only restricted entry uses the entrance red
+        if event.event_type not in (RESTRICTED_ENTRY, HAZARD_PPE):
             return
         with self._lock:
-            self._restricted_until = self._clock() + self._red_hold_seconds
+            self._room_alert_until = self._clock() + self._red_hold_seconds
             self._refresh()
         # Turn the red LED off again when the hold ends, even if the
         # entrance pipeline (whose frames normally refresh the LEDs) is
@@ -105,10 +120,14 @@ class LedHandler(BaseHandler):
 
     def _refresh(self) -> None:
         green = self._entrance_state is SessionState.GRANTED
-        red = (self._entrance_state is SessionState.DENIED
-               or self._clock() < self._restricted_until)
-        self._set(self._green, green, "green")
-        self._set(self._red, red, "red")
+        red = self._entrance_state is SessionState.DENIED
+        room_alert = self._clock() < self._room_alert_until
+        if self._room_red is None:
+            red = red or room_alert
+        else:
+            self._set(self._room_red, room_alert, "room red")
+        self._set(self._green, green, "entrance green")
+        self._set(self._red, red, "entrance red")
 
     @staticmethod
     def _set(led, lit: bool, name: str) -> None:
@@ -118,7 +137,9 @@ class LedHandler(BaseHandler):
         logger.info("LED %s %s", name, "ON" if lit else "OFF")
 
     def close(self) -> None:
-        for led in (self._green, self._red):
+        for led in (self._green, self._red, self._room_red):
+            if led is None:
+                continue
             try:
                 led.off()
                 led.close()

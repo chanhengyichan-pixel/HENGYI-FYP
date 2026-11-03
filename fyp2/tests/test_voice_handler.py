@@ -1,15 +1,16 @@
 """
-Unit tests for alerts/voice_handler.py.
+Unit tests for alerts/voice_handler.py and alerts/speaker.py.
 
-No real audio device required — subprocess.Popen is patched throughout.
+No real audio device required — the Speaker gets a fake player and runs
+without its worker thread (play_pending() plays the queue).
 """
 
 import logging
-import time
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+from alerts.speaker import Speaker, PRIORITY_DENIED, PRIORITY_GRANTED, PRIORITY_HAZARD, PRIORITY_RESTRICTED
 from alerts.voice_handler import VoiceHandler
 from core.zone_monitor import HAZARD_PPE, RESTRICTED_ENTRY, ZoneEvent
 from core.decision_engine import ComplianceStatus, FrameVerdict
@@ -24,9 +25,26 @@ COMPLIANT     = FrameVerdict(status=ComplianceStatus.COMPLIANT, person_count=1)
 NON_COMPLIANT = FrameVerdict(status=ComplianceStatus.NON_COMPLIANT,
                               violations=["no-helmet"], person_count=1)
 
-# Popen mock whose process has already finished (poll() returns an exit
-# code), so the "another prompt is still playing" check never blocks.
-_FINISHED = {"return_value.poll.return_value": 0}
+
+class FakePlayer:
+    """Records what was played. Each 'process' finishes at once."""
+
+    def __init__(self):
+        self.played = []
+        self.procs = []
+
+    def __call__(self, path):
+        self.played.append(str(path))
+        proc = MagicMock()
+        self.procs.append(proc)
+        return proc
+
+    @property
+    def call_count(self):
+        return len(self.played)
+
+    def last(self):
+        return self.played[-1]
 
 
 def _voice_config(tmp_path, create=True):
@@ -46,10 +64,28 @@ def _voice_config(tmp_path, create=True):
     return {"voice": cfg}
 
 
+class Rig:
+    """VoiceHandler + synchronous Speaker + fake player."""
+
+    def __init__(self, config, clock=None):
+        self.player = FakePlayer()
+        kw = {"clock": clock} if clock else {}
+        self.speaker = Speaker(8.0, player=self.player, threaded=False, **kw)
+        self.h = VoiceHandler(config, speaker=self.speaker)
+
+    def handle(self, *a):
+        self.h.handle(*a)
+        self.speaker.play_pending()
+
+    def zone(self, ev):
+        self.h.handle_zone_event(ev, None)
+        self.speaker.play_pending()
+
+
 @pytest.fixture
-def handler(tmp_path):
+def rig(tmp_path):
     """VoiceHandler with real placeholder WAV files that exist on disk."""
-    return VoiceHandler(_voice_config(tmp_path))
+    return Rig(_voice_config(tmp_path))
 
 
 # ---------------------------------------------------------------------------
@@ -57,155 +93,190 @@ def handler(tmp_path):
 # ---------------------------------------------------------------------------
 
 class TestDebounce:
-    def test_fires_once_on_granted_entry(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle(GRANTED, COMPLIANT, None)
-        mock_popen.assert_called_once()
+    def test_fires_once_on_granted_entry(self, rig):
+        rig.handle(GRANTED, COMPLIANT, None)
+        assert rig.player.call_count == 1
 
-    def test_fires_once_on_denied_entry(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle(DENIED, NON_COMPLIANT, None)
-        mock_popen.assert_called_once()
+    def test_fires_once_on_denied_entry(self, rig):
+        rig.handle(DENIED, NON_COMPLIANT, None)
+        assert rig.player.call_count == 1
 
-    def test_does_not_fire_again_on_subsequent_granted_frames(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle(GRANTED, COMPLIANT, None)  # entry — fires
-            handler.handle(GRANTED, COMPLIANT, None)  # same hold — debounce
-            handler.handle(GRANTED, COMPLIANT, None)
-        mock_popen.assert_called_once()
+    def test_does_not_fire_again_on_subsequent_granted_frames(self, rig):
+        for _ in range(3):
+            rig.handle(GRANTED, COMPLIANT, None)
+        assert rig.player.call_count == 1
 
-    def test_does_not_fire_again_on_subsequent_denied_frames(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            for _ in range(5):
-                handler.handle(DENIED, NON_COMPLIANT, None)
-        mock_popen.assert_called_once()
+    def test_does_not_fire_again_on_subsequent_denied_frames(self, rig):
+        for _ in range(5):
+            rig.handle(DENIED, NON_COMPLIANT, None)
+        assert rig.player.call_count == 1
 
-    def test_fires_again_after_state_resets(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle(GRANTED, COMPLIANT, None)            # fires (1)
-            handler.handle(SessionState.COOLDOWN, COMPLIANT, None)  # reset
-            handler.handle(IDLE, COMPLIANT, None)               # reset
-            handler.handle(GRANTED, COMPLIANT, None)            # fires (2)
-        assert mock_popen.call_count == 2
+    def test_fires_again_after_state_resets(self, rig):
+        rig.handle(GRANTED, COMPLIANT, None)
+        rig.handle(SessionState.COOLDOWN, COMPLIANT, None)
+        rig.handle(IDLE, COMPLIANT, None)
+        rig.handle(GRANTED, COMPLIANT, None)
+        assert rig.player.call_count == 2
 
-    def test_denied_then_granted_fires_twice(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle(DENIED, NON_COMPLIANT, None)             # fires (1)
-            handler.handle(SessionState.COOLDOWN, COMPLIANT, None)
-            handler.handle(IDLE, COMPLIANT, None)
-            handler.handle(GRANTED, COMPLIANT, None)                # fires (2)
-        assert mock_popen.call_count == 2
+    def test_denied_then_granted_fires_twice(self, rig):
+        rig.handle(DENIED, NON_COMPLIANT, None)
+        rig.handle(SessionState.COOLDOWN, COMPLIANT, None)
+        rig.handle(IDLE, COMPLIANT, None)
+        rig.handle(GRANTED, COMPLIANT, None)
+        assert rig.player.call_count == 2
 
-
-# ---------------------------------------------------------------------------
-# Non-trigger states never fire
-# ---------------------------------------------------------------------------
 
 class TestNonTriggerStates:
-    def test_non_trigger_states_do_not_play(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            for state in (IDLE, EVALUATING, SessionState.PERSON_DETECTED,
-                          SessionState.COOLDOWN):
-                handler.handle(state, COMPLIANT, None)
-        mock_popen.assert_not_called()
+    def test_non_trigger_states_do_not_play(self, rig):
+        for state in (IDLE, EVALUATING, SessionState.PERSON_DETECTED, SessionState.COOLDOWN):
+            rig.handle(state, COMPLIANT, None)
+        assert rig.player.call_count == 0
 
-
-# ---------------------------------------------------------------------------
-# Correct sound file per state
-# ---------------------------------------------------------------------------
 
 class TestCorrectSoundPlayed:
-    def test_granted_plays_granted_sound(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle(GRANTED, COMPLIANT, None)
-        args = mock_popen.call_args[0][0]  # first positional arg: the command list
-        assert "granted" in args[-1]
+    def test_granted_plays_granted_sound(self, rig):
+        rig.handle(GRANTED, COMPLIANT, None)
+        assert "granted" in rig.player.last()
 
-    def test_denied_plays_denied_sound(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle(DENIED, NON_COMPLIANT, None)
-        args = mock_popen.call_args[0][0]
-        assert "denied" in args[-1]
+    def test_denied_plays_denied_sound(self, rig):
+        rig.handle(DENIED, NON_COMPLIANT, None)
+        assert "denied" in rig.player.last()
 
-
-# ---------------------------------------------------------------------------
-# Missing audio file — graceful failure
-# ---------------------------------------------------------------------------
 
 class TestMissingAudioFile:
     def test_missing_file_does_not_crash(self, tmp_path):
-        config = _voice_config(tmp_path, create=False)
-        handler = VoiceHandler(config)  # must not raise
-
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle(GRANTED, COMPLIANT, None)  # must not raise
-        mock_popen.assert_not_called()
+        r = Rig(_voice_config(tmp_path, create=False))   # must not raise
+        r.handle(GRANTED, COMPLIANT, None)                 # must not raise
+        assert r.player.call_count == 0
 
     def test_missing_file_logs_warning_at_construction(self, tmp_path, caplog):
         config = _voice_config(tmp_path, create=False)
         with caplog.at_level(logging.WARNING, logger="alerts.voice_handler"):
-            VoiceHandler(config)
+            VoiceHandler(config, speaker=Speaker(threaded=False))
         assert any("not found" in r.message for r in caplog.records)
 
 
-# ---------------------------------------------------------------------------
-# Non-blocking — handle() must return quickly
-# ---------------------------------------------------------------------------
-
 class TestNonBlocking:
-    def test_handle_does_not_wait_on_subprocess(self, handler):
-        """
-        Confirm that handle() never calls .wait() or .communicate() on the
-        Popen result — the only mechanism that would cause the pipeline thread
-        to block for the duration of audio playback.
+    def test_handle_only_queues(self, tmp_path):
+        """handle() never plays audio itself: it only queues the prompt;
+        the Speaker's own thread plays it (here: nothing until play_pending)."""
+        player = FakePlayer()
+        sp = Speaker(player=player, threaded=False)
+        h = VoiceHandler(_voice_config(tmp_path), speaker=sp)
+        h.handle(GRANTED, COMPLIANT, None)
+        assert player.call_count == 0
+        assert len(sp.pending()) == 1
 
-        The non-blocking guarantee is that Popen is called and its return
-        value is discarded; no blocking join is performed.
-        """
-        mock_process = MagicMock()
-
-        with patch("alerts.voice_handler.subprocess.Popen", return_value=mock_process):
-            handler.handle(GRANTED, COMPLIANT, None)
-
-        mock_process.wait.assert_not_called()
-        mock_process.communicate.assert_not_called()
+    def test_default_speaker_uses_aplay_in_its_own_thread(self, tmp_path):
+        done = MagicMock()
+        with patch("alerts.speaker.subprocess.Popen", return_value=done) as popen:
+            h = VoiceHandler(_voice_config(tmp_path))
+            h.handle(GRANTED, COMPLIANT, None)
+            h.speaker.close()   # joins the worker thread
+        if popen.called:        # the worker may or may not have reached it before close
+            assert popen.call_args[0][0][0] == "aplay"
 
 
-# ---------------------------------------------------------------------------
-# Room zone events
-# ---------------------------------------------------------------------------
-
-def _event(event_type):
-    return ZoneEvent(event_type=event_type, zone="Z", track_id=1)
+def _event(event_type, violations=None):
+    return ZoneEvent(event_type=event_type, zone="Z", track_id=1, violations=violations or [])
 
 
 class TestZoneEvents:
-    def test_hazard_event_plays_hazard_sound(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle_zone_event(_event(HAZARD_PPE), None)
-        assert "hazard_ppe" in mock_popen.call_args[0][0][-1]
+    def test_hazard_event_plays_hazard_sound(self, rig):
+        rig.zone(_event(HAZARD_PPE))
+        assert "hazard_ppe" in rig.player.last()
 
-    def test_restricted_event_plays_restricted_sound(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle_zone_event(_event(RESTRICTED_ENTRY), None)
-        assert "restricted" in mock_popen.call_args[0][0][-1]
+    def test_restricted_event_plays_restricted_sound(self, rig):
+        rig.zone(_event(RESTRICTED_ENTRY))
+        assert "restricted" in rig.player.last()
 
 
-class TestOverlap:
-    def test_new_prompt_skipped_while_one_is_playing(self, handler):
-        playing = {"return_value.poll.return_value": None}  # still running
-        with patch("alerts.voice_handler.subprocess.Popen", **playing) as mock_popen:
-            handler.handle(DENIED, NON_COMPLIANT, None)
-            handler.handle_zone_event(_event(HAZARD_PPE), None)
-        mock_popen.assert_called_once()
+# ---------------------------------------------------------------------------
+# Shared speaker: queue, priority, no overlap
+# ---------------------------------------------------------------------------
 
-    def test_restricted_interrupts_current_prompt(self, handler):
-        playing = {"return_value.poll.return_value": None}
-        with patch("alerts.voice_handler.subprocess.Popen", **playing) as mock_popen:
-            handler.handle(DENIED, NON_COMPLIANT, None)
-            handler.handle_zone_event(_event(RESTRICTED_ENTRY), None)
-        assert mock_popen.call_count == 2
-        mock_popen.return_value.terminate.assert_called_once()
+class TestSharedSpeaker:
+    def test_two_cameras_share_one_queue_nothing_lost(self, tmp_path):
+        cfg = _voice_config(tmp_path)
+        player = FakePlayer()
+        sp = Speaker(player=player, threaded=False)
+        entrance, room = VoiceHandler(cfg, speaker=sp), VoiceHandler(cfg, speaker=sp)
+        entrance.handle(DENIED, NON_COMPLIANT, None)
+        room.handle_zone_event(_event(HAZARD_PPE), None)
+        sp.play_pending()
+        assert len(player.played) == 2      # both played, one after the other
+
+    def test_priority_order(self, rig):
+        rig.h.handle(GRANTED, COMPLIANT, None)
+        rig.h.handle_zone_event(_event(HAZARD_PPE), None)
+        rig.h.handle_zone_event(_event(RESTRICTED_ENTRY), None)
+        rig.speaker.play_pending()
+        names = [Path(p).name for p in rig.player.played]
+        assert names == ["restricted.wav", "hazard_ppe.wav", "granted.wav"]
+
+    def test_denied_before_hazard(self, rig):
+        rig.h.handle_zone_event(_event(HAZARD_PPE), None)
+        rig.h.handle(DENIED, _verdict("no-helmet", "no-vest"), None)
+        rig.speaker.play_pending()
+        assert [Path(p).name for p in rig.player.played] == ["denied.wav", "hazard_ppe.wav"]
+
+    def test_same_prompt_not_queued_twice(self, rig):
+        rig.h.handle_zone_event(_event(HAZARD_PPE), None)
+        rig.h.handle_zone_event(_event(HAZARD_PPE), None)
+        assert len(rig.speaker.pending()) == 1
+
+    def test_stale_prompt_dropped(self, tmp_path):
+        t = [0.0]
+        r = Rig(_voice_config(tmp_path), clock=lambda: t[0])
+        r.h.handle(GRANTED, COMPLIANT, None)
+        t[0] = 9.0                           # waited longer than 8 s
+        r.speaker.play_pending()
+        assert r.player.call_count == 0
+
+    def test_restricted_interrupts_current_prompt(self, tmp_path):
+        player = FakePlayer()
+        sp = Speaker(player=player, threaded=False)
+        proc = MagicMock()
+        sp._current = (PRIORITY_DENIED, proc, Path("denied.wav"))   # something playing now
+        sp.say(tmp_path / "r.wav", PRIORITY_RESTRICTED)
+        proc.terminate.assert_called_once()
+
+    def test_other_prompts_do_not_interrupt(self, tmp_path):
+        sp = Speaker(player=FakePlayer(), threaded=False)
+        proc = MagicMock()
+        sp._current = (PRIORITY_GRANTED, proc, Path("granted.wav"))
+        sp.say(tmp_path / "h.wav", PRIORITY_HAZARD)
+        sp.say(tmp_path / "d.wav", PRIORITY_DENIED)
+        proc.terminate.assert_not_called()
+
+    def test_threaded_speaker_plays_in_order(self, tmp_path):
+        import threading
+        gate, played = threading.Event(), []
+        files = []
+        for n in ("a", "b", "c"):
+            f = tmp_path / f"{n}.wav"; f.write_bytes(b"RIFF"); files.append(f)
+
+        def player(path):
+            proc = MagicMock()
+            proc.wait.side_effect = lambda: gate.wait(2) if path.name == "a.wav" else None
+            played.append(path.name)
+            return proc
+
+        sp = Speaker(player=player)
+        sp.say(files[0], PRIORITY_GRANTED)       # starts playing, blocks on gate
+        for _ in range(100):
+            if played:
+                break
+            gate.wait(0.01)
+        sp.say(files[1], PRIORITY_HAZARD)
+        sp.say(files[2], PRIORITY_DENIED)
+        gate.set()
+        for _ in range(200):
+            if len(played) == 3:
+                break
+            threading.Event().wait(0.01)
+        sp.close()
+        assert played == ["a.wav", "c.wav", "b.wav"]
 
 
 # ---------------------------------------------------------------------------
@@ -217,36 +288,26 @@ def _verdict(*violations):
                         violations=list(violations), person_count=1)
 
 
-def _played(mock_popen):
-    return mock_popen.call_args[0][0][-1]
-
-
 class TestMissingItemPrompt:
-    def test_denied_only_helmet(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle(DENIED, _verdict("no-helmet"), None)
-        assert _played(mock_popen).endswith("denied_no_helmet.wav")
+    def test_denied_only_helmet(self, rig):
+        rig.handle(DENIED, _verdict("no-helmet"), None)
+        assert rig.player.last().endswith("denied_no_helmet.wav")
 
-    def test_denied_only_vest(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle(DENIED, _verdict("no-vest"), None)
-        assert _played(mock_popen).endswith("denied_no_vest.wav")
+    def test_denied_only_vest(self, rig):
+        rig.handle(DENIED, _verdict("no-vest"), None)
+        assert rig.player.last().endswith("denied_no_vest.wav")
 
-    def test_denied_both_uses_general_prompt(self, handler):
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle(DENIED, _verdict("no-helmet", "no-vest"), None)
-        assert _played(mock_popen).endswith("/denied.wav")
+    def test_denied_both_uses_general_prompt(self, rig):
+        rig.handle(DENIED, _verdict("no-helmet", "no-vest"), None)
+        assert rig.player.last().endswith("/denied.wav")
 
-    def test_hazard_only_vest(self, handler):
-        ev = ZoneEvent(event_type=HAZARD_PPE, zone="Z", track_id=1, violations=["no-vest"])
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            handler.handle_zone_event(ev, None)
-        assert _played(mock_popen).endswith("hazard_no_vest.wav")
+    def test_hazard_only_vest(self, rig):
+        rig.zone(_event(HAZARD_PPE, ["no-vest"]))
+        assert rig.player.last().endswith("hazard_no_vest.wav")
 
     def test_per_item_prompt_optional(self, tmp_path):
         cfg = _voice_config(tmp_path)
         del cfg["voice"]["denied_no_helmet_sound"]
-        h = VoiceHandler(cfg)
-        with patch("alerts.voice_handler.subprocess.Popen", **_FINISHED) as mock_popen:
-            h.handle(DENIED, _verdict("no-helmet"), None)
-        assert _played(mock_popen).endswith("/denied.wav")
+        r = Rig(cfg)
+        r.handle(DENIED, _verdict("no-helmet"), None)
+        assert r.player.last().endswith("/denied.wav")

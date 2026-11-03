@@ -68,3 +68,51 @@ class TestConstruction:
         h = LedHandler(CONFIG)          # real factory path: MockFactory or _LogLed
         h.handle(SessionState.DENIED, None, None)
         h.close()
+
+
+# ---------------------------------------------------------------------------
+# Separate room LED (leds.room_red_pin)
+# ---------------------------------------------------------------------------
+
+def make_room_handler():
+    clock = [0.0]
+    green, red, room = _LogLed(17), _LogLed(22), _LogLed(27)
+    h = LedHandler(CONFIG, clock=lambda: clock[0], leds=(green, red, room))
+    return h, green, red, room, clock
+
+
+class TestRoomLed:
+    def test_restricted_lights_room_led_not_entrance(self):
+        h, green, red, room, _ = make_room_handler()
+        h.handle_zone_event(event(RESTRICTED_ENTRY), None)
+        assert room.is_lit and not red.is_lit and not green.is_lit
+
+    def test_hazard_lights_room_led(self):
+        h, green, red, room, _ = make_room_handler()
+        h.handle_zone_event(event(HAZARD_PPE), None)
+        assert room.is_lit and not red.is_lit
+
+    def test_room_led_off_after_hold(self):
+        h, green, red, room, clock = make_room_handler()
+        h.handle_zone_event(event(RESTRICTED_ENTRY), None)
+        clock[0] = 5.1
+        h.handle(SessionState.IDLE, None, None)
+        assert not room.is_lit
+
+    def test_entrance_denied_does_not_light_room_led(self):
+        h, green, red, room, _ = make_room_handler()
+        h.handle(SessionState.DENIED, None, None)
+        assert red.is_lit and not room.is_lit
+
+    def test_entrance_and_room_independent(self):
+        h, green, red, room, _ = make_room_handler()
+        h.handle(SessionState.GRANTED, None, None)
+        h.handle_zone_event(event(RESTRICTED_ENTRY), None)
+        assert green.is_lit and room.is_lit and not red.is_lit
+
+    def test_room_pin_from_config_laptop(self):
+        cfg = {"mode": "laptop", "leds": dict(CONFIG["leds"], room_red_pin=27)}
+        h = LedHandler(cfg)
+        h.handle_zone_event(event(HAZARD_PPE), None)
+        assert h._room_red.is_lit
+        h.close()
